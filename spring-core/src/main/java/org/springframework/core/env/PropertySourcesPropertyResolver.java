@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,11 +57,20 @@ public class PropertySourcesPropertyResolver extends AbstractPropertyResolver {
 
 	@Override
 	public String getProperty(String key) {
-		return getProperty(key, String.class);
+		return getProperty(key, String.class, true);
 	}
 
 	@Override
 	public <T> T getProperty(String key, Class<T> targetValueType) {
+		return getProperty(key, targetValueType, true);
+	}
+
+	@Override
+	protected String getPropertyAsRawString(String key) {
+		return getProperty(key, String.class, false);
+	}
+
+	protected <T> T getProperty(String key, Class<T> targetValueType, boolean resolveNestedPlaceholders) {
 		boolean debugEnabled = logger.isDebugEnabled();
 		if (logger.isTraceEnabled()) {
 			logger.trace(String.format("getProperty(\"%s\", %s)", key, targetValueType.getSimpleName()));
@@ -71,11 +80,11 @@ public class PropertySourcesPropertyResolver extends AbstractPropertyResolver {
 				if (debugEnabled) {
 					logger.debug(String.format("Searching for key '%s' in [%s]", key, propertySource.getName()));
 				}
-				Object value;
-				if ((value = propertySource.getProperty(key)) != null) {
+				Object value = propertySource.getProperty(key);
+				if (value != null) {
 					Class<?> valueType = value.getClass();
-					if (String.class.equals(valueType)) {
-						value = this.resolveNestedPlaceholders((String) value);
+					if (resolveNestedPlaceholders && value instanceof String) {
+						value = resolveNestedPlaceholders((String) value);
 					}
 					if (debugEnabled) {
 						logger.debug(String.format("Found key '%s' in [%s] with type [%s] and value '%s'",
@@ -86,7 +95,7 @@ public class PropertySourcesPropertyResolver extends AbstractPropertyResolver {
 								"Cannot convert value [%s] from source type [%s] to target type [%s]",
 								value, valueType.getSimpleName(), targetValueType.getSimpleName()));
 					}
-					return conversionService.convert(value, targetValueType);
+					return this.conversionService.convert(value, targetValueType);
 				}
 			}
 		}
@@ -115,10 +124,10 @@ public class PropertySourcesPropertyResolver extends AbstractPropertyResolver {
 					Class<?> clazz;
 					if (value instanceof String) {
 						try {
-							clazz = ClassUtils.forName((String)value, null);
+							clazz = ClassUtils.forName((String) value, null);
 						}
 						catch (Exception ex) {
-							throw new ClassConversionException((String)value, targetValueType, ex);
+							throw new ClassConversionException((String) value, targetValueType, ex);
 						}
 					}
 					else if (value instanceof Class) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ public class ReflectiveMethodInvocation implements ProxyMethodInvocation, Clonea
 
 	protected Object[] arguments;
 
-	private final Class targetClass;
+	private final Class<?> targetClass;
 
 	/**
 	 * Lazily initialized map of user-specific attributes for this invocation.
@@ -79,7 +79,7 @@ public class ReflectiveMethodInvocation implements ProxyMethodInvocation, Clonea
 	 * List of MethodInterceptor and InterceptorAndDynamicMethodMatcher
 	 * that need dynamic checks.
 	 */
-	protected final List interceptorsAndDynamicMethodMatchers;
+	protected final List<?> interceptorsAndDynamicMethodMatchers;
 
 	/**
 	 * Index from 0 of the current interceptor we're invoking.
@@ -103,13 +103,13 @@ public class ReflectiveMethodInvocation implements ProxyMethodInvocation, Clonea
 	 */
 	protected ReflectiveMethodInvocation(
 			Object proxy, Object target, Method method, Object[] arguments,
-			Class targetClass, List<Object> interceptorsAndDynamicMethodMatchers) {
+			Class<?> targetClass, List<Object> interceptorsAndDynamicMethodMatchers) {
 
 		this.proxy = proxy;
 		this.target = target;
 		this.targetClass = targetClass;
 		this.method = BridgeMethodResolver.findBridgedMethod(method);
-		this.arguments = arguments;
+		this.arguments = AopProxyUtils.adaptArgumentsIfNecessary(method, arguments);
 		this.interceptorsAndDynamicMethodMatchers = interceptorsAndDynamicMethodMatchers;
 	}
 
@@ -145,7 +145,7 @@ public class ReflectiveMethodInvocation implements ProxyMethodInvocation, Clonea
 	}
 
 	@Override
-	public void setArguments(Object[] arguments) {
+	public void setArguments(Object... arguments) {
 		this.arguments = arguments;
 	}
 
@@ -219,7 +219,7 @@ public class ReflectiveMethodInvocation implements ProxyMethodInvocation, Clonea
 	 * @see java.lang.Object#clone()
 	 */
 	@Override
-	public MethodInvocation invocableClone(Object[] arguments) {
+	public MethodInvocation invocableClone(Object... arguments) {
 		// Force initialization of the user attributes Map,
 		// for having a shared Map reference in the clone.
 		if (this.userAttributes == null) {

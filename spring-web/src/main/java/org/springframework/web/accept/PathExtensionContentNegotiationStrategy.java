@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,55 +20,61 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
 import java.util.Map;
-
 import javax.activation.FileTypeMap;
 import javax.activation.MimetypesFileTypeMap;
 import javax.servlet.http.HttpServletRequest;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
+import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.util.UrlPathHelper;
 import org.springframework.web.util.WebUtils;
 
 /**
- * A ContentNegotiationStrategy that uses the path extension of the URL to
- * determine what media types are requested. The path extension is first looked
- * up in the map of media types provided to the constructor. If that fails, the
- * Java Activation framework is used as a fallback mechanism.
+ * A {@code ContentNegotiationStrategy} that resolves the file extension in the
+ * request path to a key to be used to look up a media type.
  *
- * <p>
- * The presence of the Java Activation framework is detected and enabled
- * automatically but the {@link #setUseJaf(boolean)} property may be used to
- * override that setting.
+ * <p>If the file extension is not found in the explicit registrations provided
+ * to the constructor, the Java Activation Framework (JAF) is used as a fallback
+ * mechanism.
+ *
+ * <p>The presence of the JAF is detected and enabled automatically but the
+ * {@link #setUseJaf(boolean)} property may be set to false.
  *
  * @author Rossen Stoyanchev
  * @since 3.2
  */
-public class PathExtensionContentNegotiationStrategy extends AbstractMappingContentNegotiationStrategy {
-
-	private static final boolean JAF_PRESENT = ClassUtils.isPresent("javax.activation.FileTypeMap",
-					PathExtensionContentNegotiationStrategy.class.getClassLoader());
+public class PathExtensionContentNegotiationStrategy
+		extends AbstractMappingContentNegotiationStrategy {
 
 	private static final Log logger = LogFactory.getLog(PathExtensionContentNegotiationStrategy.class);
 
-	private static final UrlPathHelper urlPathHelper = new UrlPathHelper();
+	private static final boolean JAF_PRESENT = ClassUtils.isPresent(
+			"javax.activation.FileTypeMap",
+			PathExtensionContentNegotiationStrategy.class.getClassLoader());
+
+	private static final UrlPathHelper PATH_HELPER = new UrlPathHelper();
 
 	static {
-		urlPathHelper.setUrlDecode(false);
+		PATH_HELPER.setUrlDecode(false);
 	}
 
-	private boolean useJaf = JAF_PRESENT;
+
+	private boolean useJaf = true;
+
+	private boolean ignoreUnknownExtensions = true;
 
 
 	/**
-	 * Create an instance with the given extension-to-MediaType lookup.
-	 * @throws IllegalArgumentException if a media type string cannot be parsed
+	 * Create an instance with the given map of file extensions and media types.
 	 */
 	public PathExtensionContentNegotiationStrategy(Map<String, MediaType> mediaTypes) {
 		super(mediaTypes);
@@ -82,40 +88,78 @@ public class PathExtensionContentNegotiationStrategy extends AbstractMappingCont
 		super(null);
 	}
 
+
 	/**
-	 * Indicate whether to use the Java Activation Framework to map from file extensions to media types.
-	 * <p>Default is {@code true}, i.e. the Java Activation Framework is used (if available).
+	 * Whether to use the Java Activation Framework to look up file extensions.
+	 * <p>By default this is set to "true" but depends on JAF being present.
 	 */
 	public void setUseJaf(boolean useJaf) {
 		this.useJaf = useJaf;
 	}
 
+	/**
+	 * Whether to ignore requests with unknown file extension. Setting this to
+	 * {@code false} results in {@code HttpMediaTypeNotAcceptableException}.
+	 * <p>By default this is set to {@code true}.
+	 */
+	public void setIgnoreUnknownExtensions(boolean ignoreUnknownExtensions) {
+		this.ignoreUnknownExtensions = ignoreUnknownExtensions;
+	}
+
+
 	@Override
 	protected String getMediaTypeKey(NativeWebRequest webRequest) {
-		HttpServletRequest servletRequest = webRequest.getNativeRequest(HttpServletRequest.class);
-		if (servletRequest == null) {
+		HttpServletRequest request = webRequest.getNativeRequest(HttpServletRequest.class);
+		if (request == null) {
 			logger.warn("An HttpServletRequest is required to determine the media type key");
 			return null;
 		}
-		String path = urlPathHelper.getLookupPathForRequest(servletRequest);
+		String path = PATH_HELPER.getLookupPathForRequest(request);
 		String filename = WebUtils.extractFullFilenameFromUrlPath(path);
 		String extension = StringUtils.getFilenameExtension(filename);
 		return (StringUtils.hasText(extension)) ? extension.toLowerCase(Locale.ENGLISH) : null;
 	}
 
 	@Override
-	protected void handleMatch(String extension, MediaType mediaType) {
-	}
+	protected MediaType handleNoMatch(NativeWebRequest webRequest, String extension)
+			throws HttpMediaTypeNotAcceptableException {
 
-	@Override
-	protected MediaType handleNoMatch(NativeWebRequest webRequest, String extension) {
-		if (this.useJaf) {
-			MediaType jafMediaType = JafMediaTypeFactory.getMediaType("file." + extension);
-			if (jafMediaType != null && !MediaType.APPLICATION_OCTET_STREAM.equals(jafMediaType)) {
-				return jafMediaType;
+		if (this.useJaf && JAF_PRESENT) {
+			MediaType mediaType = JafMediaTypeFactory.getMediaType("file." + extension);
+			if (mediaType != null && !MediaType.APPLICATION_OCTET_STREAM.equals(mediaType)) {
+				return mediaType;
 			}
 		}
-		return null;
+		if (this.ignoreUnknownExtensions) {
+			return null;
+		}
+		throw new HttpMediaTypeNotAcceptableException(getAllMediaTypes());
+	}
+
+	/**
+	 * A public method exposing the knowledge of the path extension strategy to
+	 * resolve file extensions to a MediaType in this case for a given
+	 * {@link Resource}. The method first looks up any explicitly registered
+	 * file extensions first and then falls back on JAF if available.
+	 * @param resource the resource to look up
+	 * @return the MediaType for the extension or {@code null}.
+	 * @since 4.3
+	 */
+	public MediaType getMediaTypeForResource(Resource resource) {
+		Assert.notNull(resource);
+		MediaType mediaType = null;
+		String filename = resource.getFilename();
+		String extension = StringUtils.getFilenameExtension(filename);
+		if (extension != null) {
+			mediaType = lookupMediaType(extension);
+		}
+		if (mediaType == null && JAF_PRESENT) {
+			mediaType = JafMediaTypeFactory.getMediaType(filename);
+		}
+		if (MediaType.APPLICATION_OCTET_STREAM.equals(mediaType)) {
+			mediaType = null;
+		}
+		return mediaType;
 	}
 
 
@@ -137,7 +181,7 @@ public class PathExtensionContentNegotiationStrategy extends AbstractMappingCont
 			Resource resource = new ClassPathResource("org/springframework/mail/javamail/mime.types");
 			if (resource.exists()) {
 				if (logger.isTraceEnabled()) {
-					logger.trace("Loading Java Activation Framework FileTypeMap from " + resource);
+					logger.trace("Loading JAF FileTypeMap from " + resource);
 				}
 				InputStream inputStream = null;
 				try {

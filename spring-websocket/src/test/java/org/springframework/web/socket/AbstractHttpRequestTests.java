@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,17 +17,21 @@
 package org.springframework.web.socket;
 
 import org.junit.Before;
-import org.springframework.http.server.AsyncServletServerHttpRequest;
+
+import org.springframework.http.server.ServerHttpAsyncRequestControl;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.mock.web.test.MockHttpServletRequest;
 import org.springframework.mock.web.test.MockHttpServletResponse;
 
 /**
+ * Base class for tests using {@link ServerHttpRequest} and {@link ServerHttpResponse}.
+ *
  * @author Rossen Stoyanchev
  */
-public class AbstractHttpRequestTests {
+public abstract class AbstractHttpRequestTests {
 
 	protected ServerHttpRequest request;
 
@@ -36,6 +40,8 @@ public class AbstractHttpRequestTests {
 	protected MockHttpServletRequest servletRequest;
 
 	protected MockHttpServletResponse servletResponse;
+
+	protected ServerHttpAsyncRequestControl asyncControl;
 
 
 	@Before
@@ -49,10 +55,15 @@ public class AbstractHttpRequestTests {
 	}
 
 	protected void resetRequestAndResponse() {
+		resetRequest();
 		resetResponse();
+		this.asyncControl = this.request.getAsyncRequestControl(this.response);
+	}
+
+	protected void resetRequest() {
 		this.servletRequest = new MockHttpServletRequest();
 		this.servletRequest.setAsyncSupported(true);
-		this.request = new AsyncServletServerHttpRequest(this.servletRequest, this.servletResponse);
+		this.request = new ServletServerHttpRequest(this.servletRequest);
 	}
 
 	protected void resetResponse() {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -146,7 +146,7 @@ public class ConstructorArgumentValues {
 	 * untyped values only)
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getIndexedArgumentValue(int index, Class requiredType) {
+	public ValueHolder getIndexedArgumentValue(int index, Class<?> requiredType) {
 		return getIndexedArgumentValue(index, requiredType, null);
 	}
 
@@ -156,16 +156,16 @@ public class ConstructorArgumentValues {
 	 * @param requiredType the type to match (can be {@code null} to match
 	 * untyped values only)
 	 * @param requiredName the type to match (can be {@code null} to match
-	 * unnamed values only)
+	 * unnamed values only, or empty String to match any name)
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getIndexedArgumentValue(int index, Class requiredType, String requiredName) {
+	public ValueHolder getIndexedArgumentValue(int index, Class<?> requiredType, String requiredName) {
 		Assert.isTrue(index >= 0, "Index must not be negative");
 		ValueHolder valueHolder = this.indexedArgumentValues.get(index);
 		if (valueHolder != null &&
 				(valueHolder.getType() == null ||
 						(requiredType != null && ClassUtils.matchesTypeName(requiredType, valueHolder.getType()))) &&
-				(valueHolder.getName() == null ||
+				(valueHolder.getName() == null || "".equals(requiredName) ||
 						(requiredName != null && requiredName.equals(valueHolder.getName())))) {
 			return valueHolder;
 		}
@@ -247,7 +247,7 @@ public class ConstructorArgumentValues {
 	 * @param requiredType the type to match
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getGenericArgumentValue(Class requiredType) {
+	public ValueHolder getGenericArgumentValue(Class<?> requiredType) {
 		return getGenericArgumentValue(requiredType, null, null);
 	}
 
@@ -257,7 +257,7 @@ public class ConstructorArgumentValues {
 	 * @param requiredName the name to match
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getGenericArgumentValue(Class requiredType, String requiredName) {
+	public ValueHolder getGenericArgumentValue(Class<?> requiredType, String requiredName) {
 		return getGenericArgumentValue(requiredType, requiredName, null);
 	}
 
@@ -268,17 +268,17 @@ public class ConstructorArgumentValues {
 	 * @param requiredType the type to match (can be {@code null} to find
 	 * an arbitrary next generic argument value)
 	 * @param requiredName the name to match (can be {@code null} to not
-	 * match argument values by name)
+	 * match argument values by name, or empty String to match any name)
 	 * @param usedValueHolders a Set of ValueHolder objects that have already been used
 	 * in the current resolution process and should therefore not be returned again
 	 * @return the ValueHolder for the argument, or {@code null} if none found
 	 */
-	public ValueHolder getGenericArgumentValue(Class requiredType, String requiredName, Set<ValueHolder> usedValueHolders) {
+	public ValueHolder getGenericArgumentValue(Class<?> requiredType, String requiredName, Set<ValueHolder> usedValueHolders) {
 		for (ValueHolder valueHolder : this.genericArgumentValues) {
 			if (usedValueHolders != null && usedValueHolders.contains(valueHolder)) {
 				continue;
 			}
-			if (valueHolder.getName() != null &&
+			if (valueHolder.getName() != null && !"".equals(requiredName) &&
 					(requiredName == null || !valueHolder.getName().equals(requiredName))) {
 				continue;
 			}
@@ -309,10 +309,10 @@ public class ConstructorArgumentValues {
 	 * Look for an argument value that either corresponds to the given index
 	 * in the constructor argument list or generically matches by type.
 	 * @param index the index in the constructor argument list
-	 * @param requiredType the type to match
+	 * @param requiredType the parameter type to match
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getArgumentValue(int index, Class requiredType) {
+	public ValueHolder getArgumentValue(int index, Class<?> requiredType) {
 		return getArgumentValue(index, requiredType, null, null);
 	}
 
@@ -320,11 +320,11 @@ public class ConstructorArgumentValues {
 	 * Look for an argument value that either corresponds to the given index
 	 * in the constructor argument list or generically matches by type.
 	 * @param index the index in the constructor argument list
-	 * @param requiredType the type to match
-	 * @param requiredName the name to match
+	 * @param requiredType the parameter type to match
+	 * @param requiredName the parameter name to match
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getArgumentValue(int index, Class requiredType, String requiredName) {
+	public ValueHolder getArgumentValue(int index, Class<?> requiredType, String requiredName) {
 		return getArgumentValue(index, requiredType, requiredName, null);
 	}
 
@@ -332,15 +332,17 @@ public class ConstructorArgumentValues {
 	 * Look for an argument value that either corresponds to the given index
 	 * in the constructor argument list or generically matches by type.
 	 * @param index the index in the constructor argument list
-	 * @param requiredType the type to match (can be {@code null} to find
-	 * an untyped argument value)
+	 * @param requiredType the parameter type to match (can be {@code null}
+	 * to find an untyped argument value)
+	 * @param requiredName the parameter name to match (can be {@code null}
+	 * to find an unnamed argument value, or empty String to match any name)
 	 * @param usedValueHolders a Set of ValueHolder objects that have already
 	 * been used in the current resolution process and should therefore not
 	 * be returned again (allowing to return the next generic argument match
 	 * in case of multiple generic argument values of the same type)
 	 * @return the ValueHolder for the argument, or {@code null} if none set
 	 */
-	public ValueHolder getArgumentValue(int index, Class requiredType, String requiredName, Set<ValueHolder> usedValueHolders) {
+	public ValueHolder getArgumentValue(int index, Class<?> requiredType, String requiredName, Set<ValueHolder> usedValueHolders) {
 		Assert.isTrue(index >= 0, "Index must not be negative");
 		ValueHolder valueHolder = getIndexedArgumentValue(index, requiredType, requiredName);
 		if (valueHolder == null) {

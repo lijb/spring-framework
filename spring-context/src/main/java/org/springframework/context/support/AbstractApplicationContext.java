@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,30 +21,24 @@ import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.BeansException;
+import org.springframework.beans.CachedIntrospectionResults;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
-import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
-import org.springframework.beans.factory.support.MergedBeanDefinitionPostProcessor;
-import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.beans.support.ResourceEditorRegistrar;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -60,6 +54,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.MessageSourceAware;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.context.NoSuchMessageException;
+import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.context.ResourceLoaderAware;
 import org.springframework.context.event.ApplicationEventMulticaster;
 import org.springframework.context.event.ContextClosedEvent;
@@ -70,9 +65,7 @@ import org.springframework.context.event.SimpleApplicationEventMulticaster;
 import org.springframework.context.expression.StandardBeanExpressionResolver;
 import org.springframework.context.weaving.LoadTimeWeaverAware;
 import org.springframework.context.weaving.LoadTimeWeaverAwareProcessor;
-import org.springframework.core.OrderComparator;
-import org.springframework.core.Ordered;
-import org.springframework.core.PriorityOrdered;
+import org.springframework.core.ResolvableType;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
@@ -84,6 +77,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
+import org.springframework.util.ReflectionUtils;
+import org.springframework.util.StringValueResolver;
 
 /**
  * Abstract implementation of the {@link org.springframework.context.ApplicationContext}
@@ -117,6 +112,7 @@ import org.springframework.util.ObjectUtils;
  * @author Rod Johnson
  * @author Juergen Hoeller
  * @author Mark Fisher
+ * @author Stephane Nicoll
  * @since January 21, 2001
  * @see #refreshBeanFactory
  * @see #getBeanFactory
@@ -172,6 +168,9 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	/** Parent context */
 	private ApplicationContext parent;
 
+	/** Environment used by this context */
+	private ConfigurableEnvironment environment;
+
 	/** BeanFactoryPostProcessors to apply on refresh */
 	private final List<BeanFactoryPostProcessor> beanFactoryPostProcessors =
 			new ArrayList<BeanFactoryPostProcessor>();
@@ -180,13 +179,10 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	private long startupDate;
 
 	/** Flag that indicates whether this context is currently active */
-	private boolean active = false;
+	private final AtomicBoolean active = new AtomicBoolean();
 
 	/** Flag that indicates whether this context has been closed already */
-	private boolean closed = false;
-
-	/** Synchronization monitor for the "active" flag */
-	private final Object activeMonitor = new Object();
+	private final AtomicBoolean closed = new AtomicBoolean();
 
 	/** Synchronization monitor for the "refresh" and "destroy" */
 	private final Object startupShutdownMonitor = new Object();
@@ -207,17 +203,17 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	private ApplicationEventMulticaster applicationEventMulticaster;
 
 	/** Statically specified listeners */
-	private Set<ApplicationListener<?>> applicationListeners = new LinkedHashSet<ApplicationListener<?>>();
+	private final Set<ApplicationListener<?>> applicationListeners = new LinkedHashSet<ApplicationListener<?>>();
 
-	/** Environment used by this context; initialized by {@link #createEnvironment()} */
-	private ConfigurableEnvironment environment;
+	/** ApplicationEvents published early */
+	private Set<ApplicationEvent> earlyApplicationEvents;
 
 
 	/**
 	 * Create a new AbstractApplicationContext with no parent.
 	 */
 	public AbstractApplicationContext() {
-		this(null);
+		this.resourcePatternResolver = getResourcePatternResolver();
 	}
 
 	/**
@@ -225,8 +221,8 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * @param parent the parent context
 	 */
 	public AbstractApplicationContext(ApplicationContext parent) {
-		this.parent = parent;
-		this.resourcePatternResolver = getResourcePatternResolver();
+		this();
+		setParent(parent);
 	}
 
 
@@ -337,13 +333,63 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 */
 	@Override
 	public void publishEvent(ApplicationEvent event) {
+		publishEvent(event, null);
+	}
+
+	/**
+	 * Publish the given event to all listeners.
+	 * <p>Note: Listeners get initialized after the MessageSource, to be able
+	 * to access it within listener implementations. Thus, MessageSource
+	 * implementations cannot publish events.
+	 * @param event the event to publish (may be an {@link ApplicationEvent}
+	 * or a payload object to be turned into a {@link PayloadApplicationEvent})
+	 */
+	@Override
+	public void publishEvent(Object event) {
+		publishEvent(event, null);
+	}
+
+	/**
+	 * Publish the given event to all listeners.
+	 * @param event the event to publish (may be an {@link ApplicationEvent}
+	 * or a payload object to be turned into a {@link PayloadApplicationEvent})
+	 * @param eventType the resolved event type, if known
+	 * @since 4.2
+	 */
+	protected void publishEvent(Object event, ResolvableType eventType) {
 		Assert.notNull(event, "Event must not be null");
 		if (logger.isTraceEnabled()) {
 			logger.trace("Publishing event in " + getDisplayName() + ": " + event);
 		}
-		getApplicationEventMulticaster().multicastEvent(event);
+
+		// Decorate event as an ApplicationEvent if necessary
+		ApplicationEvent applicationEvent;
+		if (event instanceof ApplicationEvent) {
+			applicationEvent = (ApplicationEvent) event;
+		}
+		else {
+			applicationEvent = new PayloadApplicationEvent<Object>(this, event);
+			if (eventType == null) {
+				eventType = ((PayloadApplicationEvent)applicationEvent).getResolvableType();
+			}
+		}
+
+		// Multicast right now if possible - or lazily once the multicaster is initialized
+		if (this.earlyApplicationEvents != null) {
+			this.earlyApplicationEvents.add(applicationEvent);
+		}
+		else {
+			getApplicationEventMulticaster().multicastEvent(applicationEvent, eventType);
+		}
+
+		// Publish event via parent context as well...
 		if (this.parent != null) {
-			this.parent.publishEvent(event);
+			if (this.parent instanceof AbstractApplicationContext) {
+				((AbstractApplicationContext) this.parent).publishEvent(event, eventType);
+			}
+			else {
+				this.parent.publishEvent(event);
+			}
 		}
 	}
 
@@ -352,7 +398,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * @return the internal ApplicationEventMulticaster (never {@code null})
 	 * @throws IllegalStateException if the context has not been initialized yet
 	 */
-	private ApplicationEventMulticaster getApplicationEventMulticaster() throws IllegalStateException {
+	ApplicationEventMulticaster getApplicationEventMulticaster() throws IllegalStateException {
 		if (this.applicationEventMulticaster == null) {
 			throw new IllegalStateException("ApplicationEventMulticaster not initialized - " +
 					"call 'refresh' before multicasting events via the context: " + this);
@@ -365,7 +411,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * @return the internal LifecycleProcessor (never {@code null})
 	 * @throws IllegalStateException if the context has not been initialized yet
 	 */
-	private LifecycleProcessor getLifecycleProcessor() {
+	LifecycleProcessor getLifecycleProcessor() throws IllegalStateException {
 		if (this.lifecycleProcessor == null) {
 			throw new IllegalStateException("LifecycleProcessor not initialized - " +
 					"call 'refresh' before invoking lifecycle methods via the context: " + this);
@@ -416,8 +462,9 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	@Override
-	public void addBeanFactoryPostProcessor(BeanFactoryPostProcessor beanFactoryPostProcessor) {
-		this.beanFactoryPostProcessors.add(beanFactoryPostProcessor);
+	public void addBeanFactoryPostProcessor(BeanFactoryPostProcessor postProcessor) {
+		Assert.notNull(postProcessor, "BeanFactoryPostProcessor must not be null");
+		this.beanFactoryPostProcessors.add(postProcessor);
 	}
 
 
@@ -431,6 +478,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 
 	@Override
 	public void addApplicationListener(ApplicationListener<?> listener) {
+		Assert.notNull(listener, "ApplicationListener must not be null");
 		if (this.applicationEventMulticaster != null) {
 			this.applicationEventMulticaster.addApplicationListener(listener);
 		}
@@ -497,6 +545,11 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 			}
 
 			catch (BeansException ex) {
+				if (logger.isWarnEnabled()) {
+					logger.warn("Exception encountered during context initialization - " +
+							"cancelling refresh attempt: " + ex);
+				}
+
 				// Destroy already created singletons to avoid dangling resources.
 				destroyBeans();
 
@@ -505,6 +558,12 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 
 				// Propagate exception to caller.
 				throw ex;
+			}
+
+			finally {
+				// Reset common introspection caches in Spring's core, since we
+				// might not ever need metadata for singleton beans anymore...
+				resetCommonCaches();
 			}
 		}
 	}
@@ -515,10 +574,8 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 */
 	protected void prepareRefresh() {
 		this.startupDate = System.currentTimeMillis();
-
-		synchronized (this.activeMonitor) {
-			this.active = true;
-		}
+		this.closed.set(false);
+		this.active.set(true);
 
 		if (logger.isInfoEnabled()) {
 			logger.info("Refreshing " + this);
@@ -530,6 +587,10 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		// Validate that all properties marked as required are resolvable
 		// see ConfigurablePropertyResolver#setRequiredProperties
 		getEnvironment().validateRequiredProperties();
+
+		// Allow for the collection of early ApplicationEvents,
+		// to be published once the multicaster is available...
+		this.earlyApplicationEvents = new LinkedHashSet<ApplicationEvent>();
 	}
 
 	/**
@@ -564,7 +625,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	protected void prepareBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 		// Tell the internal bean factory to use the context's class loader etc.
 		beanFactory.setBeanClassLoader(getClassLoader());
-		beanFactory.setBeanExpressionResolver(new StandardBeanExpressionResolver());
+		beanFactory.setBeanExpressionResolver(new StandardBeanExpressionResolver(beanFactory.getBeanClassLoader()));
 		beanFactory.addPropertyEditorRegistrar(new ResourceEditorRegistrar(this, getEnvironment()));
 
 		// Configure the bean factory with context callbacks.
@@ -617,95 +678,13 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * <p>Must be called before singleton instantiation.
 	 */
 	protected void invokeBeanFactoryPostProcessors(ConfigurableListableBeanFactory beanFactory) {
-		// Invoke BeanDefinitionRegistryPostProcessors first, if any.
-		Set<String> processedBeans = new HashSet<String>();
-		if (beanFactory instanceof BeanDefinitionRegistry) {
-			BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
-			List<BeanFactoryPostProcessor> regularPostProcessors = new LinkedList<BeanFactoryPostProcessor>();
-			List<BeanDefinitionRegistryPostProcessor> registryPostProcessors =
-					new LinkedList<BeanDefinitionRegistryPostProcessor>();
-			for (BeanFactoryPostProcessor postProcessor : getBeanFactoryPostProcessors()) {
-				if (postProcessor instanceof BeanDefinitionRegistryPostProcessor) {
-					BeanDefinitionRegistryPostProcessor registryPostProcessor =
-							(BeanDefinitionRegistryPostProcessor) postProcessor;
-					registryPostProcessor.postProcessBeanDefinitionRegistry(registry);
-					registryPostProcessors.add(registryPostProcessor);
-				}
-				else {
-					regularPostProcessors.add(postProcessor);
-				}
-			}
-			Map<String, BeanDefinitionRegistryPostProcessor> beanMap =
-					beanFactory.getBeansOfType(BeanDefinitionRegistryPostProcessor.class, true, false);
-			List<BeanDefinitionRegistryPostProcessor> registryPostProcessorBeans =
-					new ArrayList<BeanDefinitionRegistryPostProcessor>(beanMap.values());
-			OrderComparator.sort(registryPostProcessorBeans);
-			for (BeanDefinitionRegistryPostProcessor postProcessor : registryPostProcessorBeans) {
-				postProcessor.postProcessBeanDefinitionRegistry(registry);
-			}
-			invokeBeanFactoryPostProcessors(registryPostProcessors, beanFactory);
-			invokeBeanFactoryPostProcessors(registryPostProcessorBeans, beanFactory);
-			invokeBeanFactoryPostProcessors(regularPostProcessors, beanFactory);
-			processedBeans.addAll(beanMap.keySet());
-		}
-		else {
-			// Invoke factory processors registered with the context instance.
-			invokeBeanFactoryPostProcessors(getBeanFactoryPostProcessors(), beanFactory);
-		}
+		PostProcessorRegistrationDelegate.invokeBeanFactoryPostProcessors(beanFactory, getBeanFactoryPostProcessors());
 
-		// Do not initialize FactoryBeans here: We need to leave all regular beans
-		// uninitialized to let the bean factory post-processors apply to them!
-		String[] postProcessorNames =
-				beanFactory.getBeanNamesForType(BeanFactoryPostProcessor.class, true, false);
-
-		// Separate between BeanFactoryPostProcessors that implement PriorityOrdered,
-		// Ordered, and the rest.
-		List<BeanFactoryPostProcessor> priorityOrderedPostProcessors = new ArrayList<BeanFactoryPostProcessor>();
-		List<String> orderedPostProcessorNames = new ArrayList<String>();
-		List<String> nonOrderedPostProcessorNames = new ArrayList<String>();
-		for (String ppName : postProcessorNames) {
-			if (processedBeans.contains(ppName)) {
-				// skip - already processed in first phase above
-			}
-			else if (isTypeMatch(ppName, PriorityOrdered.class)) {
-				priorityOrderedPostProcessors.add(beanFactory.getBean(ppName, BeanFactoryPostProcessor.class));
-			}
-			else if (isTypeMatch(ppName, Ordered.class)) {
-				orderedPostProcessorNames.add(ppName);
-			}
-			else {
-				nonOrderedPostProcessorNames.add(ppName);
-			}
-		}
-
-		// First, invoke the BeanFactoryPostProcessors that implement PriorityOrdered.
-		OrderComparator.sort(priorityOrderedPostProcessors);
-		invokeBeanFactoryPostProcessors(priorityOrderedPostProcessors, beanFactory);
-
-		// Next, invoke the BeanFactoryPostProcessors that implement Ordered.
-		List<BeanFactoryPostProcessor> orderedPostProcessors = new ArrayList<BeanFactoryPostProcessor>();
-		for (String postProcessorName : orderedPostProcessorNames) {
-			orderedPostProcessors.add(getBean(postProcessorName, BeanFactoryPostProcessor.class));
-		}
-		OrderComparator.sort(orderedPostProcessors);
-		invokeBeanFactoryPostProcessors(orderedPostProcessors, beanFactory);
-
-		// Finally, invoke all other BeanFactoryPostProcessors.
-		List<BeanFactoryPostProcessor> nonOrderedPostProcessors = new ArrayList<BeanFactoryPostProcessor>();
-		for (String postProcessorName : nonOrderedPostProcessorNames) {
-			nonOrderedPostProcessors.add(getBean(postProcessorName, BeanFactoryPostProcessor.class));
-		}
-		invokeBeanFactoryPostProcessors(nonOrderedPostProcessors, beanFactory);
-	}
-
-	/**
-	 * Invoke the given BeanFactoryPostProcessor beans.
-	 */
-	private void invokeBeanFactoryPostProcessors(
-			Collection<? extends BeanFactoryPostProcessor> postProcessors, ConfigurableListableBeanFactory beanFactory) {
-
-		for (BeanFactoryPostProcessor postProcessor : postProcessors) {
-			postProcessor.postProcessBeanFactory(beanFactory);
+		// Detect a LoadTimeWeaver and prepare for weaving, if found in the meantime
+		// (e.g. through an @Bean method registered by ConfigurationClassPostProcessor)
+		if (beanFactory.getTempClassLoader() == null && beanFactory.containsBean(LOAD_TIME_WEAVER_BEAN_NAME)) {
+			beanFactory.addBeanPostProcessor(new LoadTimeWeaverAwareProcessor(beanFactory));
+			beanFactory.setTempClassLoader(new ContextTypeMatchClassLoader(beanFactory.getBeanClassLoader()));
 		}
 	}
 
@@ -715,79 +694,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * <p>Must be called before any instantiation of application beans.
 	 */
 	protected void registerBeanPostProcessors(ConfigurableListableBeanFactory beanFactory) {
-		String[] postProcessorNames = beanFactory.getBeanNamesForType(BeanPostProcessor.class, true, false);
-
-		// Register BeanPostProcessorChecker that logs an info message when
-		// a bean is created during BeanPostProcessor instantiation, i.e. when
-		// a bean is not eligible for getting processed by all BeanPostProcessors.
-		int beanProcessorTargetCount = beanFactory.getBeanPostProcessorCount() + 1 + postProcessorNames.length;
-		beanFactory.addBeanPostProcessor(new BeanPostProcessorChecker(beanFactory, beanProcessorTargetCount));
-
-		// Separate between BeanPostProcessors that implement PriorityOrdered,
-		// Ordered, and the rest.
-		List<BeanPostProcessor> priorityOrderedPostProcessors = new ArrayList<BeanPostProcessor>();
-		List<BeanPostProcessor> internalPostProcessors = new ArrayList<BeanPostProcessor>();
-		List<String> orderedPostProcessorNames = new ArrayList<String>();
-		List<String> nonOrderedPostProcessorNames = new ArrayList<String>();
-		for (String ppName : postProcessorNames) {
-			if (isTypeMatch(ppName, PriorityOrdered.class)) {
-				BeanPostProcessor pp = beanFactory.getBean(ppName, BeanPostProcessor.class);
-				priorityOrderedPostProcessors.add(pp);
-				if (pp instanceof MergedBeanDefinitionPostProcessor) {
-					internalPostProcessors.add(pp);
-				}
-			}
-			else if (isTypeMatch(ppName, Ordered.class)) {
-				orderedPostProcessorNames.add(ppName);
-			}
-			else {
-				nonOrderedPostProcessorNames.add(ppName);
-			}
-		}
-
-		// First, register the BeanPostProcessors that implement PriorityOrdered.
-		OrderComparator.sort(priorityOrderedPostProcessors);
-		registerBeanPostProcessors(beanFactory, priorityOrderedPostProcessors);
-
-		// Next, register the BeanPostProcessors that implement Ordered.
-		List<BeanPostProcessor> orderedPostProcessors = new ArrayList<BeanPostProcessor>();
-		for (String ppName : orderedPostProcessorNames) {
-			BeanPostProcessor pp = beanFactory.getBean(ppName, BeanPostProcessor.class);
-			orderedPostProcessors.add(pp);
-			if (pp instanceof MergedBeanDefinitionPostProcessor) {
-				internalPostProcessors.add(pp);
-			}
-		}
-		OrderComparator.sort(orderedPostProcessors);
-		registerBeanPostProcessors(beanFactory, orderedPostProcessors);
-
-		// Now, register all regular BeanPostProcessors.
-		List<BeanPostProcessor> nonOrderedPostProcessors = new ArrayList<BeanPostProcessor>();
-		for (String ppName : nonOrderedPostProcessorNames) {
-			BeanPostProcessor pp = beanFactory.getBean(ppName, BeanPostProcessor.class);
-			nonOrderedPostProcessors.add(pp);
-			if (pp instanceof MergedBeanDefinitionPostProcessor) {
-				internalPostProcessors.add(pp);
-			}
-		}
-		registerBeanPostProcessors(beanFactory, nonOrderedPostProcessors);
-
-		// Finally, re-register all internal BeanPostProcessors.
-		OrderComparator.sort(internalPostProcessors);
-		registerBeanPostProcessors(beanFactory, internalPostProcessors);
-
-		beanFactory.addBeanPostProcessor(new ApplicationListenerDetector());
-	}
-
-	/**
-	 * Register the given BeanPostProcessor beans.
-	 */
-	private void registerBeanPostProcessors(
-			ConfigurableListableBeanFactory beanFactory, List<BeanPostProcessor> postProcessors) {
-
-		for (BeanPostProcessor postProcessor : postProcessors) {
-			beanFactory.addBeanPostProcessor(postProcessor);
-		}
+		PostProcessorRegistrationDelegate.registerBeanPostProcessors(beanFactory, this);
 	}
 
 	/**
@@ -896,11 +803,21 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		for (ApplicationListener<?> listener : getApplicationListeners()) {
 			getApplicationEventMulticaster().addApplicationListener(listener);
 		}
+
 		// Do not initialize FactoryBeans here: We need to leave all regular beans
 		// uninitialized to let post-processors apply to them!
 		String[] listenerBeanNames = getBeanNamesForType(ApplicationListener.class, true, false);
-		for (String lisName : listenerBeanNames) {
-			getApplicationEventMulticaster().addApplicationListenerBean(lisName);
+		for (String listenerBeanName : listenerBeanNames) {
+			getApplicationEventMulticaster().addApplicationListenerBean(listenerBeanName);
+		}
+
+		// Publish early application events now that we finally have a multicaster...
+		Set<ApplicationEvent> earlyEventsToProcess = this.earlyApplicationEvents;
+		this.earlyApplicationEvents = null;
+		if (earlyEventsToProcess != null) {
+			for (ApplicationEvent earlyEvent : earlyEventsToProcess) {
+				getApplicationEventMulticaster().multicastEvent(earlyEvent);
+			}
 		}
 	}
 
@@ -914,6 +831,18 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 				beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
 			beanFactory.setConversionService(
 					beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
+		}
+
+		// Register a default embedded value resolver if no bean post-processor
+		// (such as a PropertyPlaceholderConfigurer bean) registered any before:
+		// at this point, primarily for resolution in annotation attribute values.
+		if (!beanFactory.hasEmbeddedValueResolver()) {
+			beanFactory.addEmbeddedValueResolver(new StringValueResolver() {
+				@Override
+				public String resolveStringValue(String strVal) {
+					return getEnvironment().resolvePlaceholders(strVal);
+				}
+			});
 		}
 
 		// Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
@@ -957,9 +886,21 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * @param ex the exception that led to the cancellation
 	 */
 	protected void cancelRefresh(BeansException ex) {
-		synchronized (this.activeMonitor) {
-			this.active = false;
-		}
+		this.active.set(false);
+	}
+
+	/**
+	 * Reset Spring's common core caches, in particular the {@link ReflectionUtils},
+	 * {@link ResolvableType} and {@link CachedIntrospectionResults} caches.
+	 * @since 4.2
+	 * @see ReflectionUtils#clearCache()
+	 * @see ResolvableType#clearCache()
+	 * @see CachedIntrospectionResults#clearClassLoader(ClassLoader)
+	 */
+	protected void resetCommonCaches() {
+		ReflectionUtils.clearCache();
+		ResolvableType.clearCache();
+		CachedIntrospectionResults.clearClassLoader(getClassLoader());
 	}
 
 
@@ -978,7 +919,9 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 			this.shutdownHook = new Thread() {
 				@Override
 				public void run() {
-					doClose();
+					synchronized (startupShutdownMonitor) {
+						doClose();
+					}
 				}
 			};
 			Runtime.getRuntime().addShutdownHook(this.shutdownHook);
@@ -1034,13 +977,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * @see #registerShutdownHook()
 	 */
 	protected void doClose() {
-		boolean actuallyClose;
-		synchronized (this.activeMonitor) {
-			actuallyClose = this.active && !this.closed;
-			this.closed = true;
-		}
-
-		if (actuallyClose) {
+		if (this.active.get() && this.closed.compareAndSet(false, true)) {
 			if (logger.isInfoEnabled()) {
 				logger.info("Closing " + this);
 			}
@@ -1072,9 +1009,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 			// Let subclasses do some final clean-up if they wish...
 			onClose();
 
-			synchronized (this.activeMonitor) {
-				this.active = false;
-			}
+			this.active.set(false);
 		}
 	}
 
@@ -1107,9 +1042,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 
 	@Override
 	public boolean isActive() {
-		synchronized (this.activeMonitor) {
-			return this.active;
-		}
+		return this.active.get();
 	}
 
 	/**
@@ -1122,14 +1055,12 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * no-op if {@link #getBeanFactory()} itself throws an exception in such a case.
 	 */
 	protected void assertBeanFactoryActive() {
-		synchronized (this.activeMonitor) {
-			if (!this.active) {
-				if (this.closed) {
-					throw new IllegalStateException(getDisplayName() + " has been closed already");
-				}
-				else {
-					throw new IllegalStateException(getDisplayName() + " has not been refreshed yet");
-				}
+		if (!this.active.get()) {
+			if (this.closed.get()) {
+				throw new IllegalStateException(getDisplayName() + " has been closed already");
+			}
+			else {
+				throw new IllegalStateException(getDisplayName() + " has not been refreshed yet");
 			}
 		}
 	}
@@ -1164,6 +1095,12 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	@Override
+	public <T> T getBean(Class<T> requiredType, Object... args) throws BeansException {
+		assertBeanFactoryActive();
+		return getBeanFactory().getBean(requiredType, args);
+	}
+
+	@Override
 	public boolean containsBean(String name) {
 		return getBeanFactory().containsBean(name);
 	}
@@ -1181,9 +1118,15 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	@Override
-	public boolean isTypeMatch(String name, Class<?> targetType) throws NoSuchBeanDefinitionException {
+	public boolean isTypeMatch(String name, ResolvableType typeToMatch) throws NoSuchBeanDefinitionException {
 		assertBeanFactoryActive();
-		return getBeanFactory().isTypeMatch(name, targetType);
+		return getBeanFactory().isTypeMatch(name, typeToMatch);
+	}
+
+	@Override
+	public boolean isTypeMatch(String name, Class<?> typeToMatch) throws NoSuchBeanDefinitionException {
+		assertBeanFactoryActive();
+		return getBeanFactory().isTypeMatch(name, typeToMatch);
 	}
 
 	@Override
@@ -1218,6 +1161,12 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	@Override
+	public String[] getBeanNamesForType(ResolvableType type) {
+		assertBeanFactoryActive();
+		return getBeanFactory().getBeanNamesForType(type);
+	}
+
+	@Override
 	public String[] getBeanNamesForType(Class<?> type) {
 		assertBeanFactoryActive();
 		return getBeanFactory().getBeanNamesForType(type);
@@ -1244,6 +1193,12 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	@Override
+	public String[] getBeanNamesForAnnotation(Class<? extends Annotation> annotationType) {
+		assertBeanFactoryActive();
+		return getBeanFactory().getBeanNamesForAnnotation(annotationType);
+	}
+
+	@Override
 	public Map<String, Object> getBeansWithAnnotation(Class<? extends Annotation> annotationType)
 			throws BeansException {
 
@@ -1252,7 +1207,9 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	@Override
-	public <A extends Annotation> A findAnnotationOnBean(String beanName, Class<A> annotationType) {
+	public <A extends Annotation> A findAnnotationOnBean(String beanName, Class<A> annotationType)
+			throws NoSuchBeanDefinitionException{
+
 		assertBeanFactoryActive();
 		return getBeanFactory().findAnnotationOnBean(beanName, annotationType);
 	}
@@ -1353,7 +1310,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 
 	@Override
 	public boolean isRunning() {
-		return getLifecycleProcessor().isRunning();
+		return (this.lifecycleProcessor != null && this.lifecycleProcessor.isRunning());
 	}
 
 
@@ -1413,87 +1370,6 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 			sb.append("parent: ").append(parent.getDisplayName());
 		}
 		return sb.toString();
-	}
-
-
-	/**
-	 * BeanPostProcessor that logs an info message when a bean is created during
-	 * BeanPostProcessor instantiation, i.e. when a bean is not eligible for
-	 * getting processed by all BeanPostProcessors.
-	 */
-	private class BeanPostProcessorChecker implements BeanPostProcessor {
-
-		private final ConfigurableListableBeanFactory beanFactory;
-
-		private final int beanPostProcessorTargetCount;
-
-		public BeanPostProcessorChecker(ConfigurableListableBeanFactory beanFactory, int beanPostProcessorTargetCount) {
-			this.beanFactory = beanFactory;
-			this.beanPostProcessorTargetCount = beanPostProcessorTargetCount;
-		}
-
-		@Override
-		public Object postProcessBeforeInitialization(Object bean, String beanName) {
-			return bean;
-		}
-
-		@Override
-		public Object postProcessAfterInitialization(Object bean, String beanName) {
-			if (bean != null && !(bean instanceof BeanPostProcessor) &&
-					this.beanFactory.getBeanPostProcessorCount() < this.beanPostProcessorTargetCount) {
-				if (logger.isInfoEnabled()) {
-					logger.info("Bean '" + beanName + "' of type [" + bean.getClass() +
-							"] is not eligible for getting processed by all BeanPostProcessors " +
-							"(for example: not eligible for auto-proxying)");
-				}
-			}
-			return bean;
-		}
-	}
-
-
-	/**
-	 * BeanPostProcessor that detects beans which implement the ApplicationListener interface.
-	 * This catches beans that can't reliably be detected by getBeanNamesForType.
-	 */
-	private class ApplicationListenerDetector implements MergedBeanDefinitionPostProcessor {
-
-		private final Map<String, Boolean> singletonNames = new ConcurrentHashMap<String, Boolean>(64);
-
-		@Override
-		public void postProcessMergedBeanDefinition(RootBeanDefinition beanDefinition, Class<?> beanType, String beanName) {
-			if (beanDefinition.isSingleton()) {
-				this.singletonNames.put(beanName, Boolean.TRUE);
-			}
-		}
-
-		@Override
-		public Object postProcessBeforeInitialization(Object bean, String beanName) {
-			return bean;
-		}
-
-		@Override
-		public Object postProcessAfterInitialization(Object bean, String beanName) {
-			if (bean instanceof ApplicationListener) {
-				// potentially not detected as a listener by getBeanNamesForType retrieval
-				Boolean flag = this.singletonNames.get(beanName);
-				if (Boolean.TRUE.equals(flag)) {
-					// singleton bean (top-level or inner): register on the fly
-					addApplicationListener((ApplicationListener<?>) bean);
-				}
-				else if (flag == null) {
-					if (logger.isWarnEnabled() && !containsBean(beanName)) {
-						// inner bean with other scope - can't reliably process events
-						logger.warn("Inner bean '" + beanName + "' implements ApplicationListener interface " +
-								"but is not reachable for event multicasting by its containing ApplicationContext " +
-								"because it does not have singleton scope. Only top-level listener beans are allowed " +
-								"to be of non-singleton scope.");
-					}
-					this.singletonNames.put(beanName, Boolean.FALSE);
-				}
-			}
-			return bean;
-		}
 	}
 
 }

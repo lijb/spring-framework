@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,12 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import org.hamcrest.Matchers;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
+
 import org.springframework.util.FileCopyUtils;
 
 import static org.hamcrest.Matchers.*;
@@ -37,14 +39,25 @@ import static org.mockito.BDDMockito.*;
  *
  * @author Philippe Marschall
  * @author Phillip Webb
+ * @author Nicholas Williams
+ * @author Stephane Nicoll
+ * @author Juergen Hoeller
  */
 public class PathResourceTests {
 
-	private static final String TEST_DIR = "src/test/java/org/springframework/core/io";
+	private static final String TEST_DIR =
+			platformPath("src/test/resources/org/springframework/core/io");
 
-	private static final String TEST_FILE = "src/test/java/org/springframework/core/io/example.properties";
+	private static final String TEST_FILE =
+			platformPath("src/test/resources/org/springframework/core/io/example.properties");
 
-	private static final String NON_EXISTING_FILE = "src/test/java/org/springframework/core/io/doesnotexist.properties";
+	private static final String NON_EXISTING_FILE =
+			platformPath("src/test/resources/org/springframework/core/io/doesnotexist.properties");
+
+
+	private static String platformPath(String string) {
+		return string.replace('/', File.separatorChar);
+	}
 
 
 	@Rule
@@ -167,13 +180,13 @@ public class PathResourceTests {
 	@Test
 	public void getUrl() throws Exception {
 		PathResource resource = new PathResource(TEST_FILE);
-		assertTrue(resource.getURL().toString().endsWith(TEST_FILE));
+		assertThat(resource.getURL().toString(), Matchers.endsWith("core/io/example.properties"));
 	}
 
 	@Test
 	public void getUri() throws Exception {
 		PathResource resource = new PathResource(TEST_FILE);
-		assertTrue(resource.getURI().toString().endsWith(TEST_FILE));
+		assertThat(resource.getURI().toString(), Matchers.endsWith("core/io/example.properties"));
 	}
 
 	@Test
@@ -211,7 +224,7 @@ public class PathResourceTests {
 	public void lastModified() throws Exception {
 		PathResource resource = new PathResource(TEST_FILE);
 		File file = new File(TEST_FILE);
-		assertThat(resource.lastModified(), equalTo(file.lastModified()));
+		assertThat(resource.lastModified() / 1000, equalTo(file.lastModified() / 1000));
 	}
 
 	@Test

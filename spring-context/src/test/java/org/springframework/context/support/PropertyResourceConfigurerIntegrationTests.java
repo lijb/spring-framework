@@ -16,22 +16,22 @@
 
 package org.springframework.context.support;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.io.FileNotFoundException;
 
 import org.junit.Ignore;
 import org.junit.Test;
+
 import org.springframework.beans.MutablePropertyValues;
-import org.springframework.tests.sample.beans.TestBean;
 import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
 import org.springframework.beans.factory.config.PropertyResourceConfigurer;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.context.ApplicationContext;
+import org.springframework.tests.sample.beans.TestBean;
 import org.springframework.util.StringUtils;
+
+import static org.junit.Assert.*;
 
 /**
  * Integration tests for {@link PropertyResourceConfigurer} implementations requiring
@@ -150,6 +150,25 @@ public class PropertyResourceConfigurerIntegrationTests {
 		}
 		catch (BeanDefinitionStoreException ex) {
 			// expected
+		}
+	}
+
+	@Test
+	public void testPropertyPlaceholderConfigurerWithNestedUnresolvableReference() {
+		StaticApplicationContext ac = new StaticApplicationContext();
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("name", "name${var}");
+		ac.registerSingleton("tb1", TestBean.class, pvs);
+		pvs = new MutablePropertyValues();
+		pvs.add("properties", "var=${m}var\nm=${var2}\nvar2=${m2}");
+		ac.registerSingleton("configurer1", PropertyPlaceholderConfigurer.class, pvs);
+		try {
+			ac.refresh();
+			fail("Should have thrown BeanDefinitionStoreException");
+		}
+		catch (BeanDefinitionStoreException ex) {
+			// expected
+			ex.printStackTrace();
 		}
 	}
 

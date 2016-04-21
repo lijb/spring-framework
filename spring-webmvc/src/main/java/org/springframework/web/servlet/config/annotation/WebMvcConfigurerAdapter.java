@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,14 @@ public abstract class WebMvcConfigurerAdapter implements WebMvcConfigurer {
 
 	/**
 	 * {@inheritDoc}
+	 * <p>This implementation is empty.
+	 */
+	@Override
+	public void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
+	}
+
+	/**
+	 * {@inheritDoc}
 	 * <p>This implementation returns {@code null}
 	 */
 	@Override
@@ -81,6 +89,14 @@ public abstract class WebMvcConfigurerAdapter implements WebMvcConfigurer {
 	 * <p>This implementation is empty.
 	 */
 	@Override
+	public void configurePathMatch(PathMatchConfigurer configurer) {
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>This implementation is empty.
+	 */
+	@Override
 	public void addArgumentResolvers(List<HandlerMethodArgumentResolver> argumentResolvers) {
 	}
 
@@ -98,6 +114,14 @@ public abstract class WebMvcConfigurerAdapter implements WebMvcConfigurer {
 	 */
 	@Override
 	public void configureHandlerExceptionResolvers(List<HandlerExceptionResolver> exceptionResolvers) {
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>This implementation is empty.
+	 */
+	@Override
+	public void extendHandlerExceptionResolvers(List<HandlerExceptionResolver> exceptionResolvers) {
 	}
 
 	/**
@@ -130,6 +154,14 @@ public abstract class WebMvcConfigurerAdapter implements WebMvcConfigurer {
 	 * <p>This implementation is empty.
 	 */
 	@Override
+	public void configureViewResolvers(ViewResolverRegistry registry) {
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>This implementation is empty.
+	 */
+	@Override
 	public void addResourceHandlers(ResourceHandlerRegistry registry) {
 	}
 
@@ -139,6 +171,14 @@ public abstract class WebMvcConfigurerAdapter implements WebMvcConfigurer {
 	 */
 	@Override
 	public void configureDefaultServletHandling(DefaultServletHandlerConfigurer configurer) {
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>This implementation is empty.
+	 */
+	@Override
+	public void addCorsMappings(CorsRegistry registry) {
 	}
 
 }

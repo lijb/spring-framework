@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,17 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 
+import org.springframework.lang.UsesJava8;
+
 /**
- * {@link ParameterNameDiscoverer} implementation which uses JDK 8's
- * reflection facilities for introspecting parameter names.
+ * {@link ParameterNameDiscoverer} implementation which uses JDK 8's reflection facilities
+ * for introspecting parameter names (based on the "-parameters" compiler flag).
  *
  * @author Juergen Hoeller
  * @since 4.0
  * @see java.lang.reflect.Parameter#getName()
  */
+@UsesJava8
 public class StandardReflectionParameterNameDiscoverer implements ParameterNameDiscoverer {
 
 	@Override
@@ -35,7 +38,11 @@ public class StandardReflectionParameterNameDiscoverer implements ParameterNameD
 		Parameter[] parameters = method.getParameters();
 		String[] parameterNames = new String[parameters.length];
 		for (int i = 0; i < parameters.length; i++) {
-			parameterNames[i] = parameters[i].getName();
+			Parameter param = parameters[i];
+			if (!param.isNamePresent()) {
+				return null;
+			}
+			parameterNames[i] = param.getName();
 		}
 		return parameterNames;
 	}
@@ -45,7 +52,11 @@ public class StandardReflectionParameterNameDiscoverer implements ParameterNameD
 		Parameter[] parameters = ctor.getParameters();
 		String[] parameterNames = new String[parameters.length];
 		for (int i = 0; i < parameters.length; i++) {
-			parameterNames[i] = parameters[i].getName();
+			Parameter param = parameters[i];
+			if (!param.isNamePresent()) {
+				return null;
+			}
+			parameterNames[i] = param.getName();
 		}
 		return parameterNames;
 	}

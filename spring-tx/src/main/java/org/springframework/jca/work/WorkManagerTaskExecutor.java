@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import javax.resource.spi.work.WorkManager;
 import javax.resource.spi.work.WorkRejectedException;
 
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.core.task.AsyncListenableTaskExecutor;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.core.task.TaskTimeoutException;
 import org.springframework.jca.context.BootstrapContextAware;
@@ -36,6 +38,8 @@ import org.springframework.jndi.JndiLocatorSupport;
 import org.springframework.scheduling.SchedulingException;
 import org.springframework.scheduling.SchedulingTaskExecutor;
 import org.springframework.util.Assert;
+import org.springframework.util.concurrent.ListenableFuture;
+import org.springframework.util.concurrent.ListenableFutureTask;
 
 /**
  * {@link org.springframework.core.task.TaskExecutor} implementation
@@ -69,7 +73,7 @@ import org.springframework.util.Assert;
  * @see javax.resource.spi.work.WorkManager#scheduleWork
  */
 public class WorkManagerTaskExecutor extends JndiLocatorSupport
-		implements SchedulingTaskExecutor, WorkManager, BootstrapContextAware, InitializingBean {
+		implements AsyncListenableTaskExecutor, SchedulingTaskExecutor, WorkManager, BootstrapContextAware, InitializingBean {
 
 	private WorkManager workManager;
 
@@ -80,6 +84,8 @@ public class WorkManagerTaskExecutor extends JndiLocatorSupport
 	private boolean blockUntilCompleted = false;
 
 	private WorkListener workListener;
+
+	private TaskDecorator taskDecorator;
 
 
 	/**
@@ -161,6 +167,20 @@ public class WorkManagerTaskExecutor extends JndiLocatorSupport
 		this.workListener = workListener;
 	}
 
+	/**
+	 * Specify a custom {@link TaskDecorator} to be applied to any {@link Runnable}
+	 * about to be executed.
+	 * <p>Note that such a decorator is not necessarily being applied to the
+	 * user-supplied {@code Runnable}/{@code Callable} but rather to the actual
+	 * execution callback (which may be a wrapper around the user-supplied task).
+	 * <p>The primary use case is to set some execution context around the task's
+	 * invocation, or to provide some monitoring/statistics for task execution.
+	 * @since 4.3
+	 */
+	public void setTaskDecorator(TaskDecorator taskDecorator) {
+		this.taskDecorator = taskDecorator;
+	}
+
 	@Override
 	public void afterPropertiesSet() throws NamingException {
 		if (this.workManager == null) {
@@ -196,7 +216,7 @@ public class WorkManagerTaskExecutor extends JndiLocatorSupport
 	@Override
 	public void execute(Runnable task, long startTimeout) {
 		Assert.state(this.workManager != null, "No WorkManager specified");
-		Work work = new DelegatingWork(task);
+		Work work = new DelegatingWork(this.taskDecorator != null ? this.taskDecorator.decorate(task) : task);
 		try {
 			if (this.blockUntilCompleted) {
 				if (startTimeout != TIMEOUT_INDEFINITE || this.workListener != null) {
@@ -246,6 +266,20 @@ public class WorkManagerTaskExecutor extends JndiLocatorSupport
 	@Override
 	public <T> Future<T> submit(Callable<T> task) {
 		FutureTask<T> future = new FutureTask<T>(task);
+		execute(future, TIMEOUT_INDEFINITE);
+		return future;
+	}
+
+	@Override
+	public ListenableFuture<?> submitListenable(Runnable task) {
+		ListenableFutureTask<Object> future = new ListenableFutureTask<Object>(task, null);
+		execute(future, TIMEOUT_INDEFINITE);
+		return future;
+	}
+
+	@Override
+	public <T> ListenableFuture<T> submitListenable(Callable<T> task) {
+		ListenableFutureTask<T> future = new ListenableFutureTask<T>(task);
 		execute(future, TIMEOUT_INDEFINITE);
 		return future;
 	}

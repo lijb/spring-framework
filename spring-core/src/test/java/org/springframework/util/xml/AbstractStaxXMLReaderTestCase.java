@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,28 @@
 
 package org.springframework.util.xml;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMResult;
+import javax.xml.transform.sax.SAXSource;
 
 import org.junit.Before;
 import org.junit.Test;
+
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.tests.MockitoUtils;
 import org.springframework.tests.MockitoUtils.InvocationArgumentsAdapter;
+
+import org.w3c.dom.Node;
 import org.xml.sax.Attributes;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.InputSource;
@@ -38,6 +47,7 @@ import org.xml.sax.ext.LexicalHandler;
 import org.xml.sax.helpers.AttributesImpl;
 import org.xml.sax.helpers.XMLReaderFactory;
 
+import static org.junit.Assert.*;
 import static org.mockito.BDDMockito.*;
 
 public abstract class AbstractStaxXMLReaderTestCase {
@@ -105,6 +115,25 @@ public abstract class AbstractStaxXMLReaderTestCase {
 	}
 
 	@Test
+	public void whitespace() throws Exception {
+		String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><test><node1> </node1><node2> Some text </node2></test>";
+
+		Transformer transformer = TransformerFactory.newInstance().newTransformer();
+
+		AbstractStaxXMLReader staxXmlReader = createStaxXmlReader(
+				new ByteArrayInputStream(xml.getBytes("UTF-8")));
+
+		SAXSource source = new SAXSource(staxXmlReader, new InputSource());
+		DOMResult result = new DOMResult();
+
+		transformer.transform(source, result);
+
+		Node node1 = result.getNode().getFirstChild().getFirstChild();
+		assertEquals(" ", node1.getTextContent());
+		assertEquals(" Some text ", node1.getNextSibling().getTextContent());
+	}
+
+	@Test
 	public void lexicalHandler() throws Exception {
 		Resource testLexicalHandlerXml = new ClassPathResource("testLexicalHandler.xml", getClass());
 
@@ -131,7 +160,7 @@ public abstract class AbstractStaxXMLReaderTestCase {
 		verifyIdenticalInvocations(expectedLexicalHandler, actualLexicalHandler);
 	}
 
-	private final LexicalHandler mockLexicalHandler() throws Exception {
+	private LexicalHandler mockLexicalHandler() throws Exception {
 		LexicalHandler lexicalHandler = mock(LexicalHandler.class);
 		willAnswer(new CopyCharsAnswer()).given(lexicalHandler).comment(any(char[].class), anyInt(), anyInt());
 		return lexicalHandler;
@@ -165,8 +194,8 @@ public abstract class AbstractStaxXMLReaderTestCase {
 	private static class SkipLocatorArgumentsAdapter implements InvocationArgumentsAdapter {
 		@Override
 		public Object[] adaptArguments(Object[] arguments) {
-			for(int i=0; i<arguments.length; i++) {
-				if(arguments[i] instanceof Locator) {
+			for (int i = 0; i < arguments.length; i++) {
+				if (arguments[i] instanceof Locator) {
 					arguments[i] = null;
 				}
 			}
@@ -177,7 +206,7 @@ public abstract class AbstractStaxXMLReaderTestCase {
 	private static class CharArrayToStringAdapter implements InvocationArgumentsAdapter {
 		@Override
 		public Object[] adaptArguments(Object[] arguments) {
-			if(arguments.length == 3 && arguments[0] instanceof char[]
+			if (arguments.length == 3 && arguments[0] instanceof char[]
 					&& arguments[1] instanceof Integer && arguments[2] instanceof Integer) {
 				return new Object[] {new String((char[]) arguments[0], (Integer) arguments[1], (Integer) arguments[2])};
 			}
@@ -189,7 +218,7 @@ public abstract class AbstractStaxXMLReaderTestCase {
 		@Override
 		public Object[] adaptArguments(Object[] arguments) {
 			for (int i = 0; i < arguments.length; i++) {
-				if(arguments[i] instanceof Attributes) {
+				if (arguments[i] instanceof Attributes) {
 					arguments[i] = new PartialAttributes((Attributes) arguments[i]);
 				}
 			};
@@ -224,6 +253,9 @@ public abstract class AbstractStaxXMLReaderTestCase {
 		@Override
 		public boolean equals(Object obj) {
 			Attributes other = ((PartialAttributes) obj).attributes;
+			if (this.attributes.getLength() != other.getLength()) {
+				return false;
+			}
 			for (int i = 0; i < other.getLength(); i++) {
 				boolean found = false;
 				for (int j = 0; j < attributes.getLength(); j++) {

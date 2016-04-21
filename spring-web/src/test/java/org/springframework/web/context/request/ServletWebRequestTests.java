@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,9 +16,11 @@
 
 package org.springframework.web.context.request;
 
-import java.util.Date;
+import static org.junit.Assert.*;
+
 import java.util.Locale;
 import java.util.Map;
+
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
@@ -33,11 +35,8 @@ import org.springframework.mock.web.test.MockHttpServletRequest;
 import org.springframework.mock.web.test.MockHttpServletResponse;
 import org.springframework.web.multipart.MultipartRequest;
 
-import static org.junit.Assert.*;
-
 /**
  * @author Juergen Hoeller
- * @since 26.07.2006
  */
 public class ServletWebRequestTests {
 
@@ -68,13 +67,13 @@ public class ServletWebRequestTests {
 		assertEquals("value2", request.getParameterValues("param2")[0]);
 		assertEquals("value2a", request.getParameterValues("param2")[1]);
 
-		Map paramMap = request.getParameterMap();
+		Map<String, String[]> paramMap = request.getParameterMap();
 		assertEquals(2, paramMap.size());
-		assertEquals(1, ((String[]) paramMap.get("param1")).length);
-		assertEquals("value1", ((String[]) paramMap.get("param1"))[0]);
-		assertEquals(2, ((String[]) paramMap.get("param2")).length);
-		assertEquals("value2", ((String[]) paramMap.get("param2"))[0]);
-		assertEquals("value2a", ((String[]) paramMap.get("param2"))[1]);
+		assertEquals(1, paramMap.get("param1").length);
+		assertEquals("value1", paramMap.get("param1")[0]);
+		assertEquals(2, paramMap.get("param2").length);
+		assertEquals("value2", paramMap.get("param2")[0]);
+		assertEquals("value2a", paramMap.get("param2")[1]);
 	}
 
 	@Test
@@ -113,54 +112,6 @@ public class ServletWebRequestTests {
 		assertSame(decoratedResponse, request.getNativeResponse(HttpServletResponse.class));
 		assertSame(servletResponse, request.getNativeResponse(MockHttpServletResponse.class));
 		assertNull(request.getNativeResponse(MultipartRequest.class));
-	}
-
-	@Test
-	public void checkNotModifiedTimeStamp() {
-		long currentTime = new Date().getTime();
-		servletRequest.setMethod("GET");
-		servletRequest.addHeader("If-Modified-Since", currentTime);
-
-		request.checkNotModified(currentTime);
-
-		assertEquals(304, servletResponse.getStatus());
-	}
-
-	@Test
-	public void checkModifiedTimeStamp() {
-		long currentTime = new Date().getTime();
-		long oneMinuteAgo  = currentTime - (1000 * 60);
-		servletRequest.setMethod("GET");
-		servletRequest.addHeader("If-Modified-Since", oneMinuteAgo);
-
-		request.checkNotModified(currentTime);
-
-		assertEquals(200, servletResponse.getStatus());
-		assertEquals(""+currentTime, servletResponse.getHeader("Last-Modified"));
-	}
-
-	@Test
-	public void checkNotModifiedETag() {
-		String eTag = "\"Foo\"";
-		servletRequest.setMethod("GET");
-		servletRequest.addHeader("If-None-Match", eTag );
-
-		request.checkNotModified(eTag);
-
-		assertEquals(304, servletResponse.getStatus());
-	}
-
-	@Test
-	public void checkModifiedETag() {
-		String currentETag = "\"Foo\"";
-		String oldEtag = "Bar";
-		servletRequest.setMethod("GET");
-		servletRequest.addHeader("If-None-Match", oldEtag);
-
-		request.checkNotModified(currentETag);
-
-		assertEquals(200, servletResponse.getStatus());
-		assertEquals(currentETag, servletResponse.getHeader("ETag"));
 	}
 
 }

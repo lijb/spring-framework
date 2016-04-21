@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,16 @@ package org.springframework.web.portlet.context;
 
 import javax.servlet.ServletException;
 
-import org.springframework.tests.sample.beans.TestBean;
+import org.junit.Test;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.AbstractApplicationContextTests;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.TestListener;
+import org.springframework.tests.sample.beans.TestBean;
 import org.springframework.web.context.ConfigurableWebApplicationContext;
+
+import static org.junit.Assert.*;
 
 /**
  * Should ideally be eliminated.  Copied when splitting .testsuite up into individual bundles.
@@ -45,27 +48,23 @@ public abstract class AbstractXmlWebApplicationContextTests extends AbstractAppl
 	 * @see org.springframework.context.AbstractApplicationContextTests#testEvents()
 	 */
 	@Override
-	public void testEvents() throws Exception {
-		TestListener listener = (TestListener) this.applicationContext.getBean("testListener");
-		listener.zeroCounter();
-		TestListener parentListener = (TestListener) this.applicationContext.getParent().getBean("parentListener");
-		parentListener.zeroCounter();
+	protected void doTestEvents(TestListener listener, TestListener parentListener,
+			MyEvent event) {
+		TestListener listenerBean = (TestListener) this.applicationContext.getBean("testListener");
+		TestListener parentListenerBean = (TestListener) this.applicationContext.getParent().getBean("parentListener");
+		super.doTestEvents(listenerBean, parentListenerBean, event);
 
-		parentListener.zeroCounter();
-		assertTrue("0 events before publication", listener.getEventCount() == 0);
-		assertTrue("0 parent events before publication", parentListener.getEventCount() == 0);
-		this.applicationContext.publishEvent(new MyEvent(this));
-		assertTrue("1 events after publication, not " + listener.getEventCount(), listener.getEventCount() == 1);
-		assertTrue("1 parent events after publication", parentListener.getEventCount() == 1);
-	}
+	};
 
+	@Test
 	@Override
-	public void testCount() {
+	public void count() {
 		assertTrue("should have 14 beans, not "+ this.applicationContext.getBeanDefinitionCount(),
 			this.applicationContext.getBeanDefinitionCount() == 14);
 	}
 
-	public void testContextNesting() {
+	@Test
+	public void contextNesting() {
 		TestBean father = (TestBean) this.applicationContext.getBean("father");
 		assertTrue("Bean from root context", father != null);
 		assertTrue("Custom BeanPostProcessor applied", father.getFriends().contains("myFriend"));
@@ -80,7 +79,8 @@ public abstract class AbstractXmlWebApplicationContextTests extends AbstractAppl
 		assertTrue("Custom BeanPostProcessor applied", rod.getFriends().contains("myFriend"));
 	}
 
-	public void testInitializingBeanAndInitMethod() throws Exception {
+	@Test
+	public void initializingBeanAndInitMethod() throws Exception {
 		assertFalse(InitAndIB.constructed);
 		InitAndIB iib = (InitAndIB) this.applicationContext.getBean("init-and-ib");
 		assertTrue(InitAndIB.constructed);

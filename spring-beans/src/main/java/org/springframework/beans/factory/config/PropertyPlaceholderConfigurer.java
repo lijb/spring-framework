@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import java.util.Set;
 
 import org.springframework.beans.BeansException;
 import org.springframework.core.Constants;
+import org.springframework.core.SpringProperties;
+import org.springframework.core.env.AbstractEnvironment;
 import org.springframework.util.PropertyPlaceholderHelper;
 import org.springframework.util.PropertyPlaceholderHelper.PlaceholderResolver;
 import org.springframework.util.StringValueResolver;
@@ -82,7 +84,8 @@ public class PropertyPlaceholderConfigurer extends PlaceholderConfigurerSupport 
 
 	private int systemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
 
-	private boolean searchSystemEnvironment = true;
+	private boolean searchSystemEnvironment =
+			!SpringProperties.getFlag(AbstractEnvironment.IGNORE_GETENV_PROPERTY_NAME);
 
 
 	/**
@@ -216,8 +219,7 @@ public class PropertyPlaceholderConfigurer extends PlaceholderConfigurerSupport 
 			throws BeansException {
 
 		StringValueResolver valueResolver = new PlaceholderResolvingStringValueResolver(props);
-
-		this.doProcessProperties(beanFactoryToProcess, valueResolver);
+		doProcessProperties(beanFactoryToProcess, valueResolver);
 	}
 
 	/**
@@ -253,8 +255,11 @@ public class PropertyPlaceholderConfigurer extends PlaceholderConfigurerSupport 
 
 		@Override
 		public String resolveStringValue(String strVal) throws BeansException {
-			String value = this.helper.replacePlaceholders(strVal, this.resolver);
-			return (value.equals(nullValue) ? null : value);
+			String resolved = this.helper.replacePlaceholders(strVal, this.resolver);
+			if (trimValues) {
+				resolved = resolved.trim();
+			}
+			return (resolved.equals(nullValue) ? null : resolved);
 		}
 	}
 

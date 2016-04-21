@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2013 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,15 +74,15 @@ public interface PropertyResolver {
 	/**
 	 * Convert the property value associated with the given key to a {@code Class}
 	 * of type {@code T} or {@code null} if the key cannot be resolved.
-	 * @throws ConversionException if class specified by property value cannot be found
-	 * or loaded or if targetType is not assignable from class specified by property value
+	 * @throws org.springframework.core.convert.ConversionException if class specified
+	 * by property value cannot be found  or loaded or if targetType is not assignable
+	 * from class specified by property value
 	 * @see #getProperty(String, Class)
 	 */
 	<T> Class<T> getPropertyAsClass(String key, Class<T> targetType);
 
 	/**
-	 * Return the property value associated with the given key, converted to the given
-	 * targetType (never {@code null}).
+	 * Return the property value associated with the given key (never {@code null}).
 	 * @throws IllegalStateException if the key cannot be resolved
 	 * @see #getRequiredProperty(String, Class)
 	 */
@@ -113,8 +113,9 @@ public interface PropertyResolver {
 	 * no default value will cause an IllegalArgumentException to be thrown.
 	 * @return the resolved String (never {@code null})
 	 * @throws IllegalArgumentException if given text is {@code null}
-	 * @throws IllegalArgumentException if any placeholders are unresolvable
+	 * or if any placeholders are unresolvable
 	 * @see org.springframework.util.SystemPropertyUtils#resolvePlaceholders(String, boolean)
 	 */
 	String resolveRequiredPlaceholders(String text) throws IllegalArgumentException;
+
 }

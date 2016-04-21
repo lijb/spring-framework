@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.http.server;
 
 import java.nio.charset.Charset;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Before;
@@ -28,10 +29,13 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.test.MockHttpServletResponse;
 import org.springframework.util.FileCopyUtils;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * @author Arjen Poutsma
+ * @author Rossen Stoyanchev
  */
 public class ServletServerHttpResponseTests {
 
@@ -39,11 +43,13 @@ public class ServletServerHttpResponseTests {
 
 	private MockHttpServletResponse mockResponse;
 
+
 	@Before
 	public void create() throws Exception {
 		mockResponse = new MockHttpServletResponse();
 		response = new ServletServerHttpResponse(mockResponse);
 	}
+
 
 	@Test
 	public void setStatusCode() throws Exception {
@@ -63,12 +69,26 @@ public class ServletServerHttpResponseTests {
 
 		response.close();
 		assertTrue("Header not set", mockResponse.getHeaderNames().contains(headerName));
-		List headerValues = mockResponse.getHeaders(headerName);
+		List<String> headerValues = mockResponse.getHeaders(headerName);
 		assertTrue("Header not set", headerValues.contains(headerValue1));
 		assertTrue("Header not set", headerValues.contains(headerValue2));
 		assertEquals("Invalid Content-Type", "text/plain;charset=UTF-8", mockResponse.getHeader("Content-Type"));
 		assertEquals("Invalid Content-Type", "text/plain;charset=UTF-8", mockResponse.getContentType());
 		assertEquals("Invalid Content-Type", "UTF-8", mockResponse.getCharacterEncoding());
+	}
+
+	@Test
+	public void preExistingHeadersFromHttpServletResponse() {
+
+		String headerName = "Access-Control-Allow-Origin";
+		String headerValue = "localhost:8080";
+
+		this.mockResponse.addHeader(headerName, headerValue);
+		this.response = new ServletServerHttpResponse(this.mockResponse);
+
+		assertEquals(headerValue, this.response.getHeaders().getFirst(headerName));
+		assertEquals(Collections.singletonList(headerValue), this.response.getHeaders().get(headerName));
+		assertTrue(this.response.getHeaders().containsKey(headerName));
 	}
 
 	@Test

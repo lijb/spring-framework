@@ -53,8 +53,8 @@ import org.springframework.util.StringUtils;
  * to the Spring application context.
  *
  * <p>If "overrideLogging" is true (the default), the VelocityEngine will be
- * configured to log via Commons Logging, that is, using the Spring-provided
- * {@link CommonsLoggingLogSystem} as log system.
+ * configured to log via Commons Logging, that is, using
+ * {@link CommonsLogLogChute} as log system.
  *
  * <p>The simplest way to use this class is to specify a
  * {@link #setResourceLoaderPath(String) "resourceLoaderPath"}; the
@@ -66,11 +66,12 @@ import org.springframework.util.StringUtils;
  * @see #setResourceLoaderPath
  * @see #setOverrideLogging
  * @see #createVelocityEngine
- * @see CommonsLoggingLogSystem
  * @see VelocityEngineFactoryBean
  * @see org.springframework.web.servlet.view.velocity.VelocityConfigurer
  * @see org.apache.velocity.app.VelocityEngine
+ * @deprecated as of Spring 4.3, in favor of FreeMarker
  */
+@Deprecated
 public class VelocityEngineFactory {
 
 	protected final Log logger = LogFactory.getLog(getClass());
@@ -339,7 +340,7 @@ public class VelocityEngineFactory {
 	}
 
 	/**
-	 * To be implemented by subclasses that want to to perform custom
+	 * To be implemented by subclasses that want to perform custom
 	 * post-processing of the VelocityEngine after this FactoryBean
 	 * performed its default configuration (but before VelocityEngine.init).
 	 * <p>Called by {@code createVelocityEngine()}.

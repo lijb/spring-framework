@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.oxm.jaxb;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.StringReader;
 
 import javax.activation.DataHandler;
@@ -27,10 +29,10 @@ import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 
 import org.junit.Test;
+
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.oxm.AbstractUnmarshallerTests;
-import org.springframework.oxm.Unmarshaller;
 import org.springframework.oxm.jaxb.test.FlightType;
 import org.springframework.oxm.jaxb.test.Flights;
 import org.springframework.oxm.mime.MimeContainer;
@@ -39,20 +41,38 @@ import org.springframework.util.xml.StaxUtils;
 import static org.junit.Assert.*;
 import static org.mockito.BDDMockito.*;
 
-public class Jaxb2UnmarshallerTests extends AbstractUnmarshallerTests {
+/**
+ * @author Arjen Poutsma
+ * @author Biju Kunjummen
+ * @author Sam Brannen
+ */
+public class Jaxb2UnmarshallerTests extends AbstractUnmarshallerTests<Jaxb2Marshaller> {
 
 	private static final String INPUT_STRING = "<tns:flights xmlns:tns=\"http://samples.springframework.org/flight\">" +
 			"<tns:flight><tns:number>42</tns:number></tns:flight></tns:flights>";
 
-	private Jaxb2Marshaller unmarshaller;
-
 	@Override
-	public Unmarshaller createUnmarshaller() throws Exception {
-		unmarshaller = new Jaxb2Marshaller();
+	protected Jaxb2Marshaller createUnmarshaller() throws Exception {
+		Jaxb2Marshaller unmarshaller = new Jaxb2Marshaller();
 		unmarshaller.setContextPath("org.springframework.oxm.jaxb.test");
 		unmarshaller.setSchema(new ClassPathResource("org/springframework/oxm/flight.xsd"));
 		unmarshaller.afterPropertiesSet();
 		return unmarshaller;
+	}
+
+	@Override
+	protected void testFlights(Object o) {
+		Flights flights = (Flights) o;
+		assertNotNull("Flights is null", flights);
+		assertEquals("Invalid amount of flight elements", 1, flights.getFlight().size());
+		testFlight(flights.getFlight().get(0));
+	}
+
+	@Override
+	protected void testFlight(Object o) {
+		FlightType flight = (FlightType) o;
+		assertNotNull("Flight is null", flight);
+		assertEquals("Number is invalid", 42L, flight.getNumber());
 	}
 
 	@Test
@@ -87,23 +107,9 @@ public class Jaxb2UnmarshallerTests extends AbstractUnmarshallerTests {
 		assertNotNull("datahandler property not set", object.getSwaDataHandler());
 	}
 
-	@Override
-	protected void testFlights(Object o) {
-		Flights flights = (Flights) o;
-		assertNotNull("Flights is null", flights);
-		assertEquals("Invalid amount of flight elements", 1, flights.getFlight().size());
-		testFlight(flights.getFlight().get(0));
-	}
-
-	@Override
-	protected void testFlight(Object o) {
-		FlightType flight = (FlightType) o;
-		assertNotNull("Flight is null", flight);
-		assertEquals("Number is invalid", 42L, flight.getNumber());
-	}
-
 	@Test
 	@Override
+	@SuppressWarnings("unchecked")
 	public void unmarshalPartialStaxSourceXmlStreamReader() throws Exception {
 		XMLInputFactory inputFactory = XMLInputFactory.newInstance();
 		XMLStreamReader streamReader = inputFactory.createXMLStreamReader(new StringReader(INPUT_STRING));
@@ -115,5 +121,27 @@ public class Jaxb2UnmarshallerTests extends AbstractUnmarshallerTests {
 		testFlight(flight);
 	}
 
+	@Test
+	@SuppressWarnings("unchecked")
+	public void unmarshalAnXmlReferingToAWrappedXmlElementDecl() throws Exception {
+		// SPR-10714
+		unmarshaller = new Jaxb2Marshaller();
+		unmarshaller.setPackagesToScan(new String[] { "org.springframework.oxm.jaxb" });
+		unmarshaller.afterPropertiesSet();
+		Source source = new StreamSource(new StringReader(
+				"<brand-airplane><name>test</name></brand-airplane>"));
+		JAXBElement<Airplane> airplane = (JAXBElement<Airplane>) unmarshaller.unmarshal(source);
+		assertEquals("Unmarshalling via explicit @XmlRegistry tag should return correct type",
+				"test", airplane.getValue().getName());
+	}
+
+	@Test
+	public void unmarshalFile() throws IOException {
+		Resource resource = new ClassPathResource("jaxb2.xml", getClass());
+		File file = resource.getFile();
+
+		Flights f = (Flights) unmarshaller.unmarshal(new StreamSource(file));
+		testFlights(f);
+	}
 
 }

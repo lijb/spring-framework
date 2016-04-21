@@ -31,7 +31,9 @@ import org.springframework.web.servlet.view.AbstractUrlBasedView;
  * @see #setLayoutUrl
  * @see #setLayoutKey
  * @see #setScreenContentKey
+ * @deprecated as of Spring 4.3, in favor of FreeMarker
  */
+@Deprecated
 public class VelocityLayoutViewResolver extends VelocityViewResolver {
 
 	private String layoutUrl;
@@ -46,7 +48,7 @@ public class VelocityLayoutViewResolver extends VelocityViewResolver {
 	 * @see VelocityLayoutView
 	 */
 	@Override
-	protected Class requiredViewClass() {
+	protected Class<?> requiredViewClass() {
 		return VelocityLayoutView.class;
 	}
 

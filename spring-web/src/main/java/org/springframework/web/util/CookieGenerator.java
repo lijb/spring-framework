@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,15 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.util.Assert;
+
 /**
  * Helper class for cookie generation, carrying cookie descriptor settings
  * as bean properties and being able to add and remove cookie to/from a
  * given response.
  *
  * <p>Can serve as base class for components that generate specific cookies,
- * like CookieLocaleResolcer and CookieThemeResolver.
+ * such as CookieLocaleResolver and CookieThemeResolver.
  *
  * @author Juergen Hoeller
  * @since 1.1.4
@@ -43,13 +45,6 @@ public class CookieGenerator {
 	 * Default path that cookies will be visible to: "/", i.e. the entire server.
 	 */
 	public static final String DEFAULT_COOKIE_PATH = "/";
-
-	/**
-	 * Default maximum age of cookies: maximum integer value, i.e. forever.
-	 * @deprecated in favor of setting no max age value at all in such a case
-	 */
-	@Deprecated
-	public static final int DEFAULT_COOKIE_MAX_AGE = Integer.MAX_VALUE;
 
 
 	protected final Log logger = LogFactory.getLog(getClass());
@@ -177,6 +172,7 @@ public class CookieGenerator {
 	 * @see #setCookieMaxAge
 	 */
 	public void addCookie(HttpServletResponse response, String cookieValue) {
+		Assert.notNull(response, "HttpServletResponse must not be null");
 		Cookie cookie = createCookie(cookieValue);
 		Integer maxAge = getCookieMaxAge();
 		if (maxAge != null) {
@@ -204,8 +200,15 @@ public class CookieGenerator {
 	 * @see #setCookiePath
 	 */
 	public void removeCookie(HttpServletResponse response) {
+		Assert.notNull(response, "HttpServletResponse must not be null");
 		Cookie cookie = createCookie("");
 		cookie.setMaxAge(0);
+		if (isCookieSecure()) {
+			cookie.setSecure(true);
+		}
+		if (isCookieHttpOnly()) {
+			cookie.setHttpOnly(true);
+		}
 		response.addCookie(cookie);
 		if (logger.isDebugEnabled()) {
 			logger.debug("Removed cookie with name [" + getCookieName() + "]");

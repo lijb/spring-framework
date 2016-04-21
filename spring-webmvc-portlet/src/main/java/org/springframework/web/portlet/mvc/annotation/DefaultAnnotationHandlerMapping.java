@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,11 +163,11 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 					RequestMapping requestMapping = AnnotationUtils.findAnnotation(method, RequestMapping.class);
 					if (actionMapping != null) {
 						params = StringUtils.mergeStringArrays(params, actionMapping.params());
-						predicate = new ActionMappingPredicate(actionMapping.value(), params);
+						predicate = new ActionMappingPredicate(actionMapping.name(), params);
 					}
 					else if (renderMapping != null) {
 						params = StringUtils.mergeStringArrays(params, renderMapping.params());
-						predicate = new RenderMappingPredicate(renderMapping.value(), params);
+						predicate = new RenderMappingPredicate(renderMapping.windowState(), params);
 					}
 					else if (resourceMapping != null) {
 						predicate = new ResourceMappingPredicate(resourceMapping.value());
@@ -283,7 +283,7 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 		}
 
 		@Override
-		public int compareTo(Object other) {
+		public int compareTo(PortletRequestMappingPredicate other) {
 			return (other instanceof SpecialRequestTypePredicate ? -1 : compareParams(other));
 		}
 	}
@@ -300,7 +300,7 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 		}
 
 		@Override
-		public int compareTo(Object other) {
+		public int compareTo(PortletRequestMappingPredicate other) {
 			return (other instanceof SpecialRequestTypePredicate ? 1 : compareParams(other));
 		}
 	}
@@ -327,7 +327,7 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 		}
 
 		@Override
-		public int compareTo(Object other) {
+		public int compareTo(PortletRequestMappingPredicate other) {
 			if (other instanceof TypeLevelMappingPredicate) {
 				return 1;
 			}
@@ -371,7 +371,7 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 		}
 
 		@Override
-		public int compareTo(Object other) {
+		public int compareTo(PortletRequestMappingPredicate other) {
 			if (other instanceof TypeLevelMappingPredicate) {
 				return 1;
 			}
@@ -413,7 +413,7 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 		}
 
 		@Override
-		public int compareTo(Object other) {
+		public int compareTo(PortletRequestMappingPredicate other) {
 			if (other instanceof ResourceMappingPredicate) {
 				boolean hasResourceId = !"".equals(this.resourceId);
 				boolean otherHasResourceId = !"".equals(((ResourceMappingPredicate) other).resourceId);
@@ -454,7 +454,7 @@ public class DefaultAnnotationHandlerMapping extends AbstractMapBasedHandlerMapp
 		}
 
 		@Override
-		public int compareTo(Object other) {
+		public int compareTo(PortletRequestMappingPredicate other) {
 			if (other instanceof EventMappingPredicate) {
 				boolean hasEventName = !"".equals(this.eventName);
 				boolean otherHasEventName = !"".equals(((EventMappingPredicate) other).eventName);

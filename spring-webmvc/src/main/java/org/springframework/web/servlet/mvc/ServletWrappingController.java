@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package org.springframework.web.servlet.mvc;
 
 import java.util.Enumeration;
 import java.util.Properties;
-
 import javax.servlet.Servlet;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
@@ -79,15 +78,13 @@ import org.springframework.web.servlet.ModelAndView;
  * @author Juergen Hoeller
  * @since 1.1.1
  * @see ServletForwardingController
- * @see org.springframework.orm.hibernate3.support.OpenSessionInViewInterceptor
- * @see org.springframework.orm.hibernate3.support.OpenSessionInViewFilter
- * @see org.springframework.orm.jdo.support.OpenPersistenceManagerInViewInterceptor
- * @see org.springframework.orm.jdo.support.OpenPersistenceManagerInViewFilter
+ * @see org.springframework.orm.jpa.support.OpenEntityManagerInViewInterceptor
+ * @see org.springframework.orm.jpa.support.OpenEntityManagerInViewFilter
  */
 public class ServletWrappingController extends AbstractController
-	implements BeanNameAware, InitializingBean, DisposableBean {
+		implements BeanNameAware, InitializingBean, DisposableBean {
 
-	private Class servletClass;
+	private Class<?> servletClass;
 
 	private String servletName;
 
@@ -98,12 +95,17 @@ public class ServletWrappingController extends AbstractController
 	private Servlet servletInstance;
 
 
+	public ServletWrappingController() {
+		super(false);
+	}
+
+
 	/**
 	 * Set the class of the servlet to wrap.
 	 * Needs to implement {@code javax.servlet.Servlet}.
 	 * @see javax.servlet.Servlet
 	 */
-	public void setServletClass(Class servletClass) {
+	public void setServletClass(Class<?> servletClass) {
 		this.servletClass = servletClass;
 	}
 
@@ -151,7 +153,7 @@ public class ServletWrappingController extends AbstractController
 
 
 	/**
-	 * Invoke the the wrapped Servlet instance.
+	 * Invoke the wrapped Servlet instance.
 	 * @see javax.servlet.Servlet#service(javax.servlet.ServletRequest, javax.servlet.ServletResponse)
 	 */
 	@Override
@@ -196,8 +198,9 @@ public class ServletWrappingController extends AbstractController
 		}
 
 		@Override
-		public Enumeration getInitParameterNames() {
-			return initParameters.keys();
+		@SuppressWarnings({ "unchecked", "rawtypes" })
+		public Enumeration<String> getInitParameterNames() {
+			return (Enumeration) initParameters.keys();
 		}
 	}
 

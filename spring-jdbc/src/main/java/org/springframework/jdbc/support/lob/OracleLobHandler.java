@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -111,15 +111,15 @@ public class OracleLobHandler extends AbstractLobHandler {
 
 	private Boolean releaseResourcesAfterRead = Boolean.FALSE;
 
-	private Class blobClass;
+	private Class<?> blobClass;
 
-	private Class clobClass;
+	private Class<?> clobClass;
 
-	private final Map<Class, Integer> durationSessionConstants = new HashMap<Class, Integer>(2);
+	private final Map<Class<?>, Integer> durationSessionConstants = new HashMap<Class<?>, Integer>(2);
 
-	private final Map<Class, Integer> modeReadWriteConstants = new HashMap<Class, Integer>(2);
+	private final Map<Class<?>, Integer> modeReadWriteConstants = new HashMap<Class<?>, Integer>(2);
 
-	private final Map<Class, Integer> modeReadOnlyConstants = new HashMap<Class, Integer>(2);
+	private final Map<Class<?>, Integer> modeReadOnlyConstants = new HashMap<Class<?>, Integer>(2);
 
 
 	/**
@@ -569,7 +569,7 @@ public class OracleLobHandler extends AbstractLobHandler {
 		/**
 		 * Create and open an oracle.sql.BLOB/CLOB instance via reflection.
 		 */
-		protected Object prepareLob(Connection con, Class lobClass) throws Exception {
+		protected Object prepareLob(Connection con, Class<?> lobClass) throws Exception {
 			/*
 			BLOB blob = BLOB.createTemporary(con, false, BLOB.DURATION_SESSION);
 			blob.open(BLOB.MODE_READWRITE);
@@ -589,7 +589,7 @@ public class OracleLobHandler extends AbstractLobHandler {
 		@Override
 		public void close() {
 			try {
-				for (Iterator it = this.temporaryLobs.iterator(); it.hasNext();) {
+				for (Iterator<?> it = this.temporaryLobs.iterator(); it.hasNext();) {
 					/*
 					BLOB blob = (BLOB) it.next();
 					blob.freeTemporary();
@@ -613,7 +613,7 @@ public class OracleLobHandler extends AbstractLobHandler {
 	/**
 	 * Internal callback interface for use with createLob.
 	 */
-	protected static interface LobCallback {
+	protected interface LobCallback {
 
 		/**
 		 * Populate the given BLOB or CLOB instance with content.

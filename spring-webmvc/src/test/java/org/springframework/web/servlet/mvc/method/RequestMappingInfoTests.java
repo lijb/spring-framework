@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,13 @@
 
 package org.springframework.web.servlet.mvc.method;
 
-import static java.util.Arrays.asList;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
 import org.junit.Test;
+
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.test.MockHttpServletRequest;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.condition.ConsumesRequestCondition;
@@ -36,6 +31,9 @@ import org.springframework.web.servlet.mvc.condition.ParamsRequestCondition;
 import org.springframework.web.servlet.mvc.condition.PatternsRequestCondition;
 import org.springframework.web.servlet.mvc.condition.ProducesRequestCondition;
 import org.springframework.web.servlet.mvc.condition.RequestMethodsRequestCondition;
+
+import static java.util.Arrays.*;
+import static org.junit.Assert.*;
 
 /**
  * Test fixture for {@link RequestMappingInfo} tests.
@@ -212,7 +210,6 @@ public class RequestMappingInfoTests {
 
 	@Test
 	public void equals() {
-
 		RequestMappingInfo info1 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
 				new RequestMethodsRequestCondition(RequestMethod.GET),
@@ -244,7 +241,7 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=customBar"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
 
 		info2 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
@@ -256,7 +253,7 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=customBar"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
 
 		info2 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
@@ -268,7 +265,7 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=customBar"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
 
 		info2 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
@@ -280,7 +277,7 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=customBar"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
 
 		info2 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
@@ -292,7 +289,7 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=customBar"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
 
 		info2 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
@@ -304,7 +301,7 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=customBar"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
 
 		info2 = new RequestMappingInfo(
 				new PatternsRequestCondition("/foo"),
@@ -316,7 +313,26 @@ public class RequestMappingInfoTests {
 				new ParamsRequestCondition("customFoo=NOOOOOO"));
 
 		assertFalse(info1.equals(info2));
-		assertTrue(info1.hashCode() != info2.hashCode());
+		assertNotEquals(info1.hashCode(), info2.hashCode());
+	}
+
+	@Test
+	public void preFlightRequest() {
+		MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/foo");
+		request.addHeader(HttpHeaders.ORIGIN, "http://domain.com");
+		request.addHeader(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST");
+
+		RequestMappingInfo info = new RequestMappingInfo(
+				new PatternsRequestCondition("/foo"), new RequestMethodsRequestCondition(RequestMethod.POST), null,
+				null, null, null, null);
+		RequestMappingInfo match = info.getMatchingCondition(request);
+		assertNotNull(match);
+
+		info = new RequestMappingInfo(
+				new PatternsRequestCondition("/foo"), new RequestMethodsRequestCondition(RequestMethod.OPTIONS), null,
+				null, null, null, null);
+		match = info.getMatchingCondition(request);
+		assertNull("Pre-flight should match the ACCESS_CONTROL_REQUEST_METHOD", match);
 	}
 
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,26 +22,28 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
-import org.junit.Before;
+import org.hamcrest.Matchers;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-/** @author Arjen Poutsma */
+/**
+ * Unit tests for {@link org.springframework.http.HttpHeaders}.
+ *
+ * @author Arjen Poutsma
+ * @author Sebastien Deleuze
+ */
 public class HttpHeadersTests {
 
-	private HttpHeaders headers;
+	private final HttpHeaders headers = new HttpHeaders();
 
-	@Before
-	public void setUp() {
-		headers = new HttpHeaders();
-	}
 
 	@Test
 	public void accept() {
@@ -55,10 +57,8 @@ public class HttpHeadersTests {
 		assertEquals("Invalid Accept header", "text/html, text/plain", headers.getFirst("Accept"));
 	}
 
-	// SPR-9655
-
-	@Test
-	public void acceptiPlanet() {
+	@Test  // SPR-9655
+	public void acceptIPlanet() {
 		headers.add("Accept", "text/html");
 		headers.add("Accept", "text/plain");
 		List<MediaType> expected = Arrays.asList(new MediaType("text", "html"), new MediaType("text", "plain"));
@@ -162,7 +162,7 @@ public class HttpHeadersTests {
 		assertEquals("Invalid Date header", "Thu, 18 Dec 2008 10:20:00 GMT", headers.getFirst("date"));
 
 		// RFC 850
-		headers.set("Date", "Thursday, 18-Dec-08 11:20:00 CET");
+		headers.set("Date", "Thu, 18 Dec 2008 10:20:00 GMT");
 		assertEquals("Invalid Date header", date, headers.getDate());
 	}
 
@@ -210,15 +210,33 @@ public class HttpHeadersTests {
 		assertEquals("Invalid Expires header", "Thu, 18 Dec 2008 10:20:00 GMT", headers.getFirst("expires"));
 	}
 
+	@Test  // SPR-10648 (example is from INT-3063)
+	public void expiresInvalidDate() {
+		headers.set("Expires", "-1");
+		assertEquals(-1, headers.getExpires());
+	}
+
 	@Test
 	public void ifModifiedSince() {
 		Calendar calendar = new GregorianCalendar(2008, 11, 18, 11, 20);
 		calendar.setTimeZone(TimeZone.getTimeZone("CET"));
 		long date = calendar.getTimeInMillis();
 		headers.setIfModifiedSince(date);
-		assertEquals("Invalid If-Modified-Since header", date, headers.getIfNotModifiedSince());
+		assertEquals("Invalid If-Modified-Since header", date, headers.getIfModifiedSince());
 		assertEquals("Invalid If-Modified-Since header", "Thu, 18 Dec 2008 10:20:00 GMT",
 				headers.getFirst("if-modified-since"));
+	}
+
+	@Test  // SPR-14144
+	public void invalidIfModifiedSinceHeader() {
+		headers.set(HttpHeaders.IF_MODIFIED_SINCE, "0");
+		assertEquals(-1, headers.getIfModifiedSince());
+
+		headers.set(HttpHeaders.IF_MODIFIED_SINCE, "-1");
+		assertEquals(-1, headers.getIfModifiedSince());
+
+		headers.set(HttpHeaders.IF_MODIFIED_SINCE, "XXX");
+		assertEquals(-1, headers.getIfModifiedSince());
 	}
 
 	@Test
@@ -248,5 +266,76 @@ public class HttpHeadersTests {
 				headers.getFirst("Content-Disposition"));
 	}
 
+	@Test  // SPR-11917
+	public void getAllowEmptySet() {
+		headers.setAllow(Collections.<HttpMethod> emptySet());
+		assertThat(headers.getAllow(), Matchers.emptyCollectionOf(HttpMethod.class));
+	}
+
+	@Test
+	public void accessControlAllowCredentials() {
+		assertFalse(headers.getAccessControlAllowCredentials());
+		headers.setAccessControlAllowCredentials(false);
+		assertFalse(headers.getAccessControlAllowCredentials());
+		headers.setAccessControlAllowCredentials(true);
+		assertTrue(headers.getAccessControlAllowCredentials());
+	}
+
+	@Test
+	public void accessControlAllowHeaders() {
+		List<String> allowedHeaders = headers.getAccessControlAllowHeaders();
+		assertThat(allowedHeaders, Matchers.emptyCollectionOf(String.class));
+		headers.setAccessControlAllowHeaders(Arrays.asList("header1", "header2"));
+		allowedHeaders = headers.getAccessControlAllowHeaders();
+		assertEquals(allowedHeaders, Arrays.asList("header1", "header2"));
+	}
+
+	@Test
+	public void accessControlAllowMethods() {
+		List<HttpMethod> allowedMethods = headers.getAccessControlAllowMethods();
+		assertThat(allowedMethods, Matchers.emptyCollectionOf(HttpMethod.class));
+		headers.setAccessControlAllowMethods(Arrays.asList(HttpMethod.GET, HttpMethod.POST));
+		allowedMethods = headers.getAccessControlAllowMethods();
+		assertEquals(allowedMethods, Arrays.asList(HttpMethod.GET, HttpMethod.POST));
+	}
+
+	@Test
+	public void accessControlAllowOrigin() {
+		assertNull(headers.getAccessControlAllowOrigin());
+		headers.setAccessControlAllowOrigin("*");
+		assertEquals("*", headers.getAccessControlAllowOrigin());
+	}
+
+	@Test
+	public void accessControlExposeHeaders() {
+		List<String> exposedHeaders = headers.getAccessControlExposeHeaders();
+		assertThat(exposedHeaders, Matchers.emptyCollectionOf(String.class));
+		headers.setAccessControlExposeHeaders(Arrays.asList("header1", "header2"));
+		exposedHeaders = headers.getAccessControlExposeHeaders();
+		assertEquals(exposedHeaders, Arrays.asList("header1", "header2"));
+	}
+
+	@Test
+	public void accessControlMaxAge() {
+		assertEquals(-1, headers.getAccessControlMaxAge());
+		headers.setAccessControlMaxAge(3600);
+		assertEquals(3600, headers.getAccessControlMaxAge());
+	}
+
+	@Test
+	public void accessControlRequestHeaders() {
+		List<String> requestHeaders = headers.getAccessControlRequestHeaders();
+		assertThat(requestHeaders, Matchers.emptyCollectionOf(String.class));
+		headers.setAccessControlRequestHeaders(Arrays.asList("header1", "header2"));
+		requestHeaders = headers.getAccessControlRequestHeaders();
+		assertEquals(requestHeaders, Arrays.asList("header1", "header2"));
+	}
+
+	@Test
+	public void accessControlRequestMethod() {
+		assertNull(headers.getAccessControlRequestMethod());
+		headers.setAccessControlRequestMethod(HttpMethod.POST);
+		assertEquals(HttpMethod.POST, headers.getAccessControlRequestMethod());
+	}
 
 }

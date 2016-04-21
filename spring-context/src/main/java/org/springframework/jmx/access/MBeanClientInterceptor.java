@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,7 @@ import org.springframework.jmx.support.JmxUtils;
 import org.springframework.jmx.support.ObjectNameManager;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
+import org.springframework.util.StringUtils;
 
 /**
  * {@link org.aopalliance.intercept.MethodInterceptor} that routes calls to an
@@ -107,7 +108,7 @@ public class MBeanClientInterceptor
 
 	private boolean useStrictCasing = true;
 
-	private Class managementInterface;
+	private Class<?> managementInterface;
 
 	private ClassLoader beanClassLoader = ClassUtils.getDefaultClassLoader();
 
@@ -215,7 +216,7 @@ public class MBeanClientInterceptor
 	 * setters and getters for MBean attributes and conventional Java methods
 	 * for MBean operations.
 	 */
-	public void setManagementInterface(Class managementInterface) {
+	public void setManagementInterface(Class<?> managementInterface) {
 		this.managementInterface = managementInterface;
 	}
 
@@ -223,7 +224,7 @@ public class MBeanClientInterceptor
 	 * Return the management interface of the target MBean,
 	 * or {@code null} if none specified.
 	 */
-	protected final Class getManagementInterface() {
+	protected final Class<?> getManagementInterface() {
 		return this.managementInterface;
 	}
 
@@ -263,20 +264,13 @@ public class MBeanClientInterceptor
 			}
 			this.invocationHandler = null;
 			if (this.useStrictCasing) {
-				// Use the JDK's own MBeanServerInvocationHandler,
-				// in particular for native MXBean support on Java 6.
-				if (JmxUtils.isMXBeanSupportAvailable()) {
-					this.invocationHandler =
-							new MBeanServerInvocationHandler(this.serverToUse, this.objectName,
-									(this.managementInterface != null && JMX.isMXBeanInterface(this.managementInterface)));
-				}
-				else {
-					this.invocationHandler = new MBeanServerInvocationHandler(this.serverToUse, this.objectName);
-				}
+				// Use the JDK's own MBeanServerInvocationHandler, in particular for native MXBean support.
+				this.invocationHandler = new MBeanServerInvocationHandler(this.serverToUse, this.objectName,
+						(this.managementInterface != null && JMX.isMXBeanInterface(this.managementInterface)));
 			}
 			else {
-				// Non-strict casing can only be achieved through custom
-				// invocation handling. Only partial MXBean support available!
+				// Non-strict casing can only be achieved through custom invocation handling.
+				// Only partial MXBean support available!
 				retrieveMBeanInfo();
 			}
 		}
@@ -299,7 +293,7 @@ public class MBeanClientInterceptor
 			MBeanOperationInfo[] operationInfo = info.getOperations();
 			this.allowedOperations = new HashMap<MethodCacheKey, MBeanOperationInfo>(operationInfo.length);
 			for (MBeanOperationInfo infoEle : operationInfo) {
-				Class[] paramTypes = JmxUtils.parameterInfoToTypes(infoEle.getSignature(), this.beanClassLoader);
+				Class<?>[] paramTypes = JmxUtils.parameterInfoToTypes(infoEle.getSignature(), this.beanClassLoader);
 				this.allowedOperations.put(new MethodCacheKey(infoEle.getName(), paramTypes), infoEle);
 			}
 		}
@@ -534,7 +528,7 @@ public class MBeanClientInterceptor
 	 * is necessary
 	 */
 	protected Object convertResultValueIfNecessary(Object result, MethodParameter parameter) {
-		Class targetClass = parameter.getParameterType();
+		Class<?> targetClass = parameter.getParameterType();
 		try {
 			if (result == null) {
 				return null;
@@ -552,7 +546,7 @@ public class MBeanClientInterceptor
 					return convertDataArrayToTargetArray(array, targetClass);
 				}
 				else if (Collection.class.isAssignableFrom(targetClass)) {
-					Class elementType = GenericCollectionTypeResolver.getCollectionParameterType(parameter);
+					Class<?> elementType = GenericCollectionTypeResolver.getCollectionParameterType(parameter);
 					if (elementType != null) {
 						return convertDataArrayToTargetCollection(array, targetClass, elementType);
 					}
@@ -568,7 +562,7 @@ public class MBeanClientInterceptor
 					return convertDataArrayToTargetArray(array, targetClass);
 				}
 				else if (Collection.class.isAssignableFrom(targetClass)) {
-					Class elementType = GenericCollectionTypeResolver.getCollectionParameterType(parameter);
+					Class<?> elementType = GenericCollectionTypeResolver.getCollectionParameterType(parameter);
 					if (elementType != null) {
 						return convertDataArrayToTargetCollection(array, targetClass, elementType);
 					}
@@ -584,8 +578,8 @@ public class MBeanClientInterceptor
 		}
 	}
 
-	private Object convertDataArrayToTargetArray(Object[] array, Class targetClass) throws NoSuchMethodException {
-		Class targetType = targetClass.getComponentType();
+	private Object convertDataArrayToTargetArray(Object[] array, Class<?> targetClass) throws NoSuchMethodException {
+		Class<?> targetType = targetClass.getComponentType();
 		Method fromMethod = targetType.getMethod("from", array.getClass().getComponentType());
 		Object resultArray = Array.newInstance(targetType, array.length);
 		for (int i = 0; i < array.length; i++) {
@@ -594,12 +588,11 @@ public class MBeanClientInterceptor
 		return resultArray;
 	}
 
-	@SuppressWarnings("unchecked")
-	private Collection convertDataArrayToTargetCollection(Object[] array, Class collectionType, Class elementType)
+	private Collection<?> convertDataArrayToTargetCollection(Object[] array, Class<?> collectionType, Class<?> elementType)
 			throws NoSuchMethodException {
 
 		Method fromMethod = elementType.getMethod("from", array.getClass().getComponentType());
-		Collection resultColl = CollectionFactory.createCollection(collectionType, Array.getLength(array));
+		Collection<Object> resultColl = CollectionFactory.createCollection(collectionType, Array.getLength(array));
 		for (int i = 0; i < array.length; i++) {
 			resultColl.add(ReflectionUtils.invokeMethod(fromMethod, null, array[i]));
 		}
@@ -612,15 +605,16 @@ public class MBeanClientInterceptor
 		this.connector.close();
 	}
 
+
 	/**
 	 * Simple wrapper class around a method name and its signature.
 	 * Used as the key when caching methods.
 	 */
-	private static class MethodCacheKey {
+	private static final class MethodCacheKey implements Comparable<MethodCacheKey> {
 
 		private final String name;
 
-		private final Class[] parameterTypes;
+		private final Class<?>[] parameterTypes;
 
 		/**
 		 * Create a new instance of {@code MethodCacheKey} with the supplied
@@ -628,14 +622,14 @@ public class MBeanClientInterceptor
 		 * @param name the name of the method
 		 * @param parameterTypes the arguments in the method signature
 		 */
-		public MethodCacheKey(String name, Class[] parameterTypes) {
+		public MethodCacheKey(String name, Class<?>[] parameterTypes) {
 			this.name = name;
-			this.parameterTypes = (parameterTypes != null ? parameterTypes : new Class[0]);
+			this.parameterTypes = (parameterTypes != null ? parameterTypes : new Class<?>[0]);
 		}
 
 		@Override
 		public boolean equals(Object other) {
-			if (other == this) {
+			if (this == other) {
 				return true;
 			}
 			MethodCacheKey otherKey = (MethodCacheKey) other;
@@ -645,6 +639,32 @@ public class MBeanClientInterceptor
 		@Override
 		public int hashCode() {
 			return this.name.hashCode();
+		}
+
+		@Override
+		public String toString() {
+			return this.name + "(" + StringUtils.arrayToCommaDelimitedString(this.parameterTypes) + ")";
+		}
+
+		@Override
+		public int compareTo(MethodCacheKey other) {
+			int result = this.name.compareTo(other.name);
+			if (result != 0) {
+				return result;
+			}
+			if (this.parameterTypes.length < other.parameterTypes.length) {
+				return -1;
+			}
+			if (this.parameterTypes.length > other.parameterTypes.length) {
+				return 1;
+			}
+			for (int i = 0; i < this.parameterTypes.length; i++) {
+				result = this.parameterTypes[i].getName().compareTo(other.parameterTypes[i].getName());
+				if (result != 0) {
+					return result;
+				}
+			}
+			return 0;
 		}
 	}
 

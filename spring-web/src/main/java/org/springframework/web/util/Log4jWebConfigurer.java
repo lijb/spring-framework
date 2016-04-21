@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ package org.springframework.web.util;
 import java.io.FileNotFoundException;
 import javax.servlet.ServletContext;
 
-import org.springframework.util.Log4jConfigurer;
 import org.springframework.util.ResourceUtils;
+import org.springframework.util.StringUtils;
 
 /**
  * Convenience class that performs custom log4j initialization for web environments,
@@ -92,7 +92,10 @@ import org.springframework.util.ResourceUtils;
  * @since 12.08.2003
  * @see org.springframework.util.Log4jConfigurer
  * @see Log4jConfigListener
+ * @deprecated as of Spring 4.2.1, in favor of Apache Log4j 2
+ * (following Apache's EOL declaration for log4j 1.x)
  */
+@Deprecated
 public abstract class Log4jWebConfigurer {
 
 	/** Parameter specifying the location of the log4j config file */
@@ -126,8 +129,7 @@ public abstract class Log4jWebConfigurer {
 
 				// Leave a URL (e.g. "classpath:" or "file:") as-is.
 				if (!ResourceUtils.isUrl(location)) {
-					// Consider a plain file path as relative to the web
-					// application root directory.
+					// Consider a plain file path as relative to the web application root directory.
 					location = WebUtils.getRealPath(servletContext, location);
 				}
 
@@ -136,12 +138,12 @@ public abstract class Log4jWebConfigurer {
 
 				// Check whether refresh interval was specified.
 				String intervalString = servletContext.getInitParameter(REFRESH_INTERVAL_PARAM);
-				if (intervalString != null) {
+				if (StringUtils.hasText(intervalString)) {
 					// Initialize with refresh interval, i.e. with log4j's watchdog thread,
 					// checking the file in the background.
 					try {
 						long refreshInterval = Long.parseLong(intervalString);
-						Log4jConfigurer.initLogging(location, refreshInterval);
+						org.springframework.util.Log4jConfigurer.initLogging(location, refreshInterval);
 					}
 					catch (NumberFormatException ex) {
 						throw new IllegalArgumentException("Invalid 'log4jRefreshInterval' parameter: " + ex.getMessage());
@@ -149,7 +151,7 @@ public abstract class Log4jWebConfigurer {
 				}
 				else {
 					// Initialize without refresh check, i.e. without log4j's watchdog thread.
-					Log4jConfigurer.initLogging(location);
+					org.springframework.util.Log4jConfigurer.initLogging(location);
 				}
 			}
 			catch (FileNotFoundException ex) {
@@ -167,7 +169,7 @@ public abstract class Log4jWebConfigurer {
 	public static void shutdownLogging(ServletContext servletContext) {
 		servletContext.log("Shutting down log4j");
 		try {
-			Log4jConfigurer.shutdownLogging();
+			org.springframework.util.Log4jConfigurer.shutdownLogging();
 		}
 		finally {
 			// Remove the web app root system property.

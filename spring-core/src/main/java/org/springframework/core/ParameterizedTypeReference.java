@@ -61,7 +61,7 @@ public abstract class ParameterizedTypeReference<T> {
 	@Override
 	public boolean equals(Object obj) {
 		return (this == obj || (obj instanceof ParameterizedTypeReference &&
-				this.type.equals(((ParameterizedTypeReference) obj).type)));
+				this.type.equals(((ParameterizedTypeReference<?>) obj).type)));
 	}
 
 	@Override
@@ -77,10 +77,10 @@ public abstract class ParameterizedTypeReference<T> {
 
 	private static Class<?> findParameterizedTypeReferenceSubclass(Class<?> child) {
 		Class<?> parent = child.getSuperclass();
-		if (Object.class.equals(parent)) {
+		if (Object.class == parent) {
 			throw new IllegalStateException("Expected ParameterizedTypeReference superclass");
 		}
-		else if (ParameterizedTypeReference.class.equals(parent)) {
+		else if (ParameterizedTypeReference.class == parent) {
 			return child;
 		}
 		else {

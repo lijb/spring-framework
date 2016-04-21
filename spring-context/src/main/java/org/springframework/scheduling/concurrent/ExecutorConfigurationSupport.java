@@ -63,14 +63,18 @@ public abstract class ExecutorConfigurationSupport extends CustomizableThreadFac
 
 
 	/**
-	 * Set the ThreadFactory to use for the ThreadPoolExecutor's thread pool.
-	 * Default is the ThreadPoolExecutor's default thread factory.
+	 * Set the ThreadFactory to use for the ExecutorService's thread pool.
+	 * Default is the underlying ExecutorService's default thread factory.
 	 * <p>In a Java EE 7 or other managed environment with JSR-236 support,
 	 * consider specifying a JNDI-located ManagedThreadFactory: by default,
-	 * to be found at "java:comp/env/concurrent/tf/DefaultThreadFactory".
+	 * to be found at "java:comp/DefaultManagedThreadFactory".
 	 * Use the "jee:jndi-lookup" namespace element in XML or the programmatic
 	 * {@link org.springframework.jndi.JndiLocatorDelegate} for convenient lookup.
+	 * Alternatively, consider using Spring's {@link DefaultManagedAwareThreadFactory}
+	 * with its fallback to local threads in case of no managed thread factory found.
 	 * @see java.util.concurrent.Executors#defaultThreadFactory()
+	 * @see javax.enterprise.concurrent.ManagedThreadFactory
+	 * @see DefaultManagedAwareThreadFactory
 	 */
 	public void setThreadFactory(ThreadFactory threadFactory) {
 		this.threadFactory = (threadFactory != null ? threadFactory : this);
@@ -83,8 +87,8 @@ public abstract class ExecutorConfigurationSupport extends CustomizableThreadFac
 	}
 
 	/**
-	 * Set the RejectedExecutionHandler to use for the ThreadPoolExecutor.
-	 * Default is the ThreadPoolExecutor's default abort policy.
+	 * Set the RejectedExecutionHandler to use for the ExecutorService.
+	 * Default is the ExecutorService's default abort policy.
 	 * @see java.util.concurrent.ThreadPoolExecutor.AbortPolicy
 	 */
 	public void setRejectedExecutionHandler(RejectedExecutionHandler rejectedExecutionHandler) {
@@ -189,7 +193,7 @@ public abstract class ExecutorConfigurationSupport extends CustomizableThreadFac
 	}
 
 	/**
-	 * Perform a shutdown on the ThreadPoolExecutor.
+	 * Perform a shutdown on the underlying ExecutorService.
 	 * @see java.util.concurrent.ExecutorService#shutdown()
 	 * @see java.util.concurrent.ExecutorService#shutdownNow()
 	 * @see #awaitTerminationIfNecessary()

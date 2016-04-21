@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,10 +35,13 @@ import org.hibernate.JDBCException;
 import org.hibernate.NonUniqueObjectException;
 import org.hibernate.NonUniqueResultException;
 import org.hibernate.ObjectDeletedException;
+import org.hibernate.OptimisticLockException;
 import org.hibernate.PersistentObjectException;
+import org.hibernate.PessimisticLockException;
 import org.hibernate.PropertyValueException;
 import org.hibernate.Query;
 import org.hibernate.QueryException;
+import org.hibernate.QueryTimeoutException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.StaleObjectStateException;
@@ -63,6 +66,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.jdbc.support.SQLErrorCodeSQLExceptionTranslator;
 import org.springframework.jdbc.support.SQLExceptionTranslator;
@@ -87,6 +91,8 @@ import org.springframework.util.Assert;
  * and {@link HibernateTransactionManager}. Can also be used directly in
  * application code.
  *
+ * <p>Requires Hibernate 3.6.x, as of Spring 4.0.
+ *
  * @author Juergen Hoeller
  * @since 1.2
  * @see #getSession
@@ -94,7 +100,9 @@ import org.springframework.util.Assert;
  * @see HibernateTransactionManager
  * @see org.springframework.transaction.jta.JtaTransactionManager
  * @see org.springframework.transaction.support.TransactionSynchronizationManager
+ * @deprecated as of Spring 4.3, in favor of Hibernate 4.x/5.x
  */
+@Deprecated
 public abstract class SessionFactoryUtils {
 
 	/**
@@ -214,8 +222,7 @@ public abstract class SessionFactoryUtils {
 	 * <p>Supports setting a Session-level Hibernate entity interceptor that allows
 	 * to inspect and change property values before writing to and reading from the
 	 * database. Such an interceptor can also be set at the SessionFactory level
-	 * (i.e. on LocalSessionFactoryBean), on HibernateTransactionManager, or on
-	 * HibernateInterceptor/HibernateTemplate.
+	 * (i.e. on LocalSessionFactoryBean), on HibernateTransactionManager, etc.
 	 * @param sessionFactory Hibernate SessionFactory to create the session with
 	 * @param entityInterceptor Hibernate entity interceptor, or {@code null} if none
 	 * @param jdbcExceptionTranslator SQLExcepionTranslator to use for flushing the
@@ -224,7 +231,6 @@ public abstract class SessionFactoryUtils {
 	 * @return the Hibernate Session
 	 * @throws DataAccessResourceFailureException if the Session couldn't be created
 	 * @see LocalSessionFactoryBean#setEntityInterceptor
-	 * @see HibernateInterceptor#setEntityInterceptor
 	 * @see HibernateTemplate#setEntityInterceptor
 	 */
 	public static Session getSession(
@@ -371,8 +377,8 @@ public abstract class SessionFactoryUtils {
 	 * @throws DataAccessResourceFailureException if the Session couldn't be created
 	 */
 	private static Session getJtaSynchronizedSession(
-		SessionHolder sessionHolder, SessionFactory sessionFactory,
-		SQLExceptionTranslator jdbcExceptionTranslator) throws DataAccessResourceFailureException {
+			SessionHolder sessionHolder, SessionFactory sessionFactory,
+			SQLExceptionTranslator jdbcExceptionTranslator) throws DataAccessResourceFailureException {
 
 		// JTA synchronization is only possible with a javax.transaction.TransactionManager.
 		// We'll check the Hibernate SessionFactory: If a TransactionManagerLookup is specified
@@ -611,10 +617,12 @@ public abstract class SessionFactoryUtils {
 	 */
 	public static void applyTransactionTimeout(Criteria criteria, SessionFactory sessionFactory) {
 		Assert.notNull(criteria, "No Criteria object specified");
-		SessionHolder sessionHolder =
-			(SessionHolder) TransactionSynchronizationManager.getResource(sessionFactory);
-		if (sessionHolder != null && sessionHolder.hasTimeout()) {
-			criteria.setTimeout(sessionHolder.getTimeToLiveInSeconds());
+		if (sessionFactory != null) {
+			SessionHolder sessionHolder =
+				(SessionHolder) TransactionSynchronizationManager.getResource(sessionFactory);
+			if (sessionHolder != null && sessionHolder.hasTimeout()) {
+				criteria.setTimeout(sessionHolder.getTimeToLiveInSeconds());
+			}
 		}
 	}
 
@@ -634,9 +642,17 @@ public abstract class SessionFactoryUtils {
 			SQLGrammarException jdbcEx = (SQLGrammarException) ex;
 			return new InvalidDataAccessResourceUsageException(ex.getMessage() + "; SQL [" + jdbcEx.getSQL() + "]", ex);
 		}
+		if (ex instanceof QueryTimeoutException) {
+			QueryTimeoutException jdbcEx = (QueryTimeoutException) ex;
+			return new org.springframework.dao.QueryTimeoutException(ex.getMessage() + "; SQL [" + jdbcEx.getSQL() + "]", ex);
+		}
 		if (ex instanceof LockAcquisitionException) {
 			LockAcquisitionException jdbcEx = (LockAcquisitionException) ex;
 			return new CannotAcquireLockException(ex.getMessage() + "; SQL [" + jdbcEx.getSQL() + "]", ex);
+		}
+		if (ex instanceof PessimisticLockException) {
+			PessimisticLockException jdbcEx = (PessimisticLockException) ex;
+			return new PessimisticLockingFailureException(ex.getMessage() + "; SQL [" + jdbcEx.getSQL() + "]", ex);
 		}
 		if (ex instanceof ConstraintViolationException) {
 			ConstraintViolationException jdbcEx = (ConstraintViolationException) ex;
@@ -684,6 +700,9 @@ public abstract class SessionFactoryUtils {
 		}
 		if (ex instanceof StaleStateException) {
 			return new HibernateOptimisticLockingFailureException((StaleStateException) ex);
+		}
+		if (ex instanceof OptimisticLockException) {
+			return new HibernateOptimisticLockingFailureException((OptimisticLockException) ex);
 		}
 
 		// fallback

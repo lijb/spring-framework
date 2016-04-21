@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,14 @@
 
 package org.springframework.orm.hibernate3.support;
 
-import java.util.concurrent.Callable;
-
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
+
 import org.springframework.dao.DataAccessException;
-import org.springframework.orm.hibernate3.HibernateAccessor;
-import org.springframework.orm.hibernate3.SessionFactoryUtils;
-import org.springframework.orm.hibernate3.SessionHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.ui.ModelMap;
 import org.springframework.web.context.request.AsyncWebRequestInterceptor;
-import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.context.request.async.CallableProcessingInterceptorAdapter;
 import org.springframework.web.context.request.async.WebAsyncManager;
 import org.springframework.web.context.request.async.WebAsyncUtils;
 
@@ -89,12 +83,15 @@ import org.springframework.web.context.request.async.WebAsyncUtils;
  * @see #setSingleSession
  * @see #setFlushMode
  * @see OpenSessionInViewFilter
- * @see org.springframework.orm.hibernate3.HibernateInterceptor
+ * @see OpenSessionInterceptor
  * @see org.springframework.orm.hibernate3.HibernateTransactionManager
  * @see org.springframework.orm.hibernate3.SessionFactoryUtils#getSession
  * @see org.springframework.transaction.support.TransactionSynchronizationManager
+ * @see org.hibernate.SessionFactory#getCurrentSession()
+ * @deprecated as of Spring 4.3, in favor of Hibernate 4.x/5.x
  */
-public class OpenSessionInViewInterceptor extends HibernateAccessor implements AsyncWebRequestInterceptor {
+@Deprecated
+public class OpenSessionInViewInterceptor extends org.springframework.orm.hibernate3.HibernateAccessor implements AsyncWebRequestInterceptor {
 
 	/**
 	 * Suffix that gets appended to the {@code SessionFactory}
@@ -123,8 +120,8 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 	 * its own session (like without Open Session in View). Each of those
 	 * sessions will be registered for deferred close, though, actually
 	 * processed at request completion.
-	 * @see SessionFactoryUtils#initDeferredClose
-	 * @see SessionFactoryUtils#processDeferredClose
+	 * @see org.springframework.orm.hibernate3.SessionFactoryUtils#initDeferredClose
+	 * @see org.springframework.orm.hibernate3.SessionFactoryUtils#processDeferredClose
 	 */
 	public void setSingleSession(boolean singleSession) {
 		this.singleSession = singleSession;
@@ -146,10 +143,9 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 	 */
 	@Override
 	public void preHandle(WebRequest request) throws DataAccessException {
-
-		WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request);
 		String participateAttributeName = getParticipateAttributeName();
 
+		WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request);
 		if (asyncManager.hasConcurrentResult()) {
 			if (applySessionBindingInterceptor(asyncManager, participateAttributeName)) {
 				return;
@@ -157,7 +153,7 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 		}
 
 		if ((isSingleSession() && TransactionSynchronizationManager.hasResource(getSessionFactory())) ||
-			SessionFactoryUtils.isDeferredCloseActive(getSessionFactory())) {
+				org.springframework.orm.hibernate3.SessionFactoryUtils.isDeferredCloseActive(getSessionFactory())) {
 			// Do not modify the Session: just mark the request accordingly.
 			Integer count = (Integer) request.getAttribute(participateAttributeName, WebRequest.SCOPE_REQUEST);
 			int newCount = (count != null ? count + 1 : 1);
@@ -167,18 +163,20 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 			if (isSingleSession()) {
 				// single session mode
 				logger.debug("Opening single Hibernate Session in OpenSessionInViewInterceptor");
-				Session session = SessionFactoryUtils.getSession(
+				Session session = org.springframework.orm.hibernate3.SessionFactoryUtils.getSession(
 						getSessionFactory(), getEntityInterceptor(), getJdbcExceptionTranslator());
 				applyFlushMode(session, false);
-				SessionHolder sessionHolder = new SessionHolder(session);
+				org.springframework.orm.hibernate3.SessionHolder sessionHolder = new org.springframework.orm.hibernate3.SessionHolder(session);
 				TransactionSynchronizationManager.bindResource(getSessionFactory(), sessionHolder);
 
-				asyncManager.registerCallableInterceptor(participateAttributeName,
-						new SessionBindingCallableInterceptor(sessionHolder));
+				AsyncRequestInterceptor asyncRequestInterceptor =
+						new AsyncRequestInterceptor(getSessionFactory(), sessionHolder);
+				asyncManager.registerCallableInterceptor(participateAttributeName, asyncRequestInterceptor);
+				asyncManager.registerDeferredResultInterceptor(participateAttributeName, asyncRequestInterceptor);
 			}
 			else {
 				// deferred close mode
-				SessionFactoryUtils.initDeferredClose(getSessionFactory());
+				org.springframework.orm.hibernate3.SessionFactoryUtils.initDeferredClose(getSessionFactory());
 			}
 		}
 	}
@@ -194,8 +192,8 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 	public void postHandle(WebRequest request, ModelMap model) throws DataAccessException {
 		if (isSingleSession()) {
 			// Only potentially flush in single session mode.
-			SessionHolder sessionHolder =
-					(SessionHolder) TransactionSynchronizationManager.getResource(getSessionFactory());
+			org.springframework.orm.hibernate3.SessionHolder sessionHolder =
+					(org.springframework.orm.hibernate3.SessionHolder) TransactionSynchronizationManager.getResource(getSessionFactory());
 			logger.debug("Flushing single Hibernate Session in OpenSessionInViewInterceptor");
 			try {
 				flushIfNecessary(sessionHolder.getSession(), false);
@@ -217,14 +215,14 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 		if (!decrementParticipateCount(request)) {
 			if (isSingleSession()) {
 				// single session mode
-				SessionHolder sessionHolder =
-						(SessionHolder) TransactionSynchronizationManager.unbindResource(getSessionFactory());
+				org.springframework.orm.hibernate3.SessionHolder sessionHolder =
+						(org.springframework.orm.hibernate3.SessionHolder) TransactionSynchronizationManager.unbindResource(getSessionFactory());
 				logger.debug("Closing single Hibernate Session in OpenSessionInViewInterceptor");
-				SessionFactoryUtils.closeSession(sessionHolder.getSession());
+				org.springframework.orm.hibernate3.SessionFactoryUtils.closeSession(sessionHolder.getSession());
 			}
 			else {
 				// deferred close mode
-				SessionFactoryUtils.processDeferredClose(getSessionFactory());
+				org.springframework.orm.hibernate3.SessionFactoryUtils.processDeferredClose(getSessionFactory());
 			}
 		}
 	}
@@ -272,34 +270,8 @@ public class OpenSessionInViewInterceptor extends HibernateAccessor implements A
 		if (asyncManager.getCallableInterceptor(key) == null) {
 			return false;
 		}
-		((SessionBindingCallableInterceptor) asyncManager.getCallableInterceptor(key)).initializeThread();
+		((AsyncRequestInterceptor) asyncManager.getCallableInterceptor(key)).bindSession();
 		return true;
 	}
 
-
-	/**
-	 * Bind and unbind the Hibernate {@code Session} to the current thread.
-	 */
-	private class SessionBindingCallableInterceptor extends CallableProcessingInterceptorAdapter {
-
-		private final SessionHolder sessionHolder;
-
-		public SessionBindingCallableInterceptor(SessionHolder sessionHolder) {
-			this.sessionHolder = sessionHolder;
-		}
-
-		@Override
-		public <T> void preProcess(NativeWebRequest request, Callable<T> task) {
-			initializeThread();
-		}
-
-		@Override
-		public <T> void postProcess(NativeWebRequest request, Callable<T> task, Object concurrentResult) {
-			TransactionSynchronizationManager.unbindResource(getSessionFactory());
-		}
-
-		private void initializeThread() {
-			TransactionSynchronizationManager.bindResource(getSessionFactory(), this.sessionHolder);
-		}
-	}
 }

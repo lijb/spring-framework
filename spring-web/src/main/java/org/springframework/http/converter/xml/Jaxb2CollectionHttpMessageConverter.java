@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,13 +25,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
-
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.UnmarshalException;
 import javax.xml.bind.Unmarshaller;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
 import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLResolver;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.transform.Result;
@@ -39,10 +39,13 @@ import javax.xml.transform.Source;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
+import org.springframework.http.HttpOutputMessage;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.GenericHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.util.StreamUtils;
 
 /**
  * An {@code HttpMessageConverter} that can read XML collections using JAXB2.
@@ -52,12 +55,15 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
  * does not support writing.
  *
  * @author Arjen Poutsma
+ * @author Rossen Stoyanchev
  * @since 3.2
  */
+@SuppressWarnings("rawtypes")
 public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 		extends AbstractJaxb2HttpMessageConverter<T> implements GenericHttpMessageConverter<T> {
 
 	private final XMLInputFactory inputFactory = createXmlInputFactory();
+
 
 	/**
 	 * Always returns {@code false} since Jaxb2CollectionHttpMessageConverter
@@ -108,6 +114,15 @@ public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 		return false;
 	}
 
+	/**
+	 * Always returns {@code false} since Jaxb2CollectionHttpMessageConverter
+	 * does not convert collections to XML.
+	 */
+	@Override
+	public boolean canWrite(Type type, Class<?> clazz, MediaType mediaType) {
+		return false;
+	}
+
 	@Override
 	protected boolean supports(Class<?> clazz) {
 		// should not be called, since we override canRead/Write
@@ -121,6 +136,7 @@ public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 	}
 
 	@Override
+	@SuppressWarnings("unchecked")
 	public T read(Type type, Class<?> contextClass, HttpInputMessage inputMessage)
 			throws IOException, HttpMessageNotReadableException {
 
@@ -162,7 +178,6 @@ public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 	/**
 	 * Create a Collection of the given type, with the given initial capacity
 	 * (if supported by the Collection type).
-	 *
 	 * @param collectionClass the type of Collection to instantiate
 	 * @return the created Collection instance
 	 */
@@ -178,10 +193,10 @@ public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 								collectionClass.getName() + "]: " + ex.getMessage());
 			}
 		}
-		else if (List.class.equals(collectionClass)) {
+		else if (List.class == collectionClass) {
 			return (T) new ArrayList();
 		}
-		else if (SortedSet.class.equals(collectionClass)) {
+		else if (SortedSet.class == collectionClass) {
 			return (T) new TreeSet();
 		}
 		else {
@@ -213,6 +228,12 @@ public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 	}
 
 	@Override
+	public void write(T t, Type type, MediaType contentType, HttpOutputMessage outputMessage)
+			throws IOException, HttpMessageNotWritableException {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
 	protected void writeToResult(T t, HttpHeaders headers, Result result) throws IOException {
 		throw new UnsupportedOperationException();
 	}
@@ -220,13 +241,23 @@ public class Jaxb2CollectionHttpMessageConverter<T extends Collection>
 	/**
 	 * Create a {@code XMLInputFactory} that this converter will use to create {@link
 	 * javax.xml.stream.XMLStreamReader} and {@link javax.xml.stream.XMLEventReader} objects.
-	 * <p/> Can be overridden in subclasses, adding further initialization of the factory.
+	 * <p>Can be overridden in subclasses, adding further initialization of the factory.
 	 * The resulting factory is cached, so this method will only be called once.
-	 *
-	 * @return the created factory
 	 */
 	protected XMLInputFactory createXmlInputFactory() {
-		return XMLInputFactory.newInstance();
+		XMLInputFactory inputFactory = XMLInputFactory.newInstance();
+		inputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+		inputFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+		inputFactory.setXMLResolver(NO_OP_XML_RESOLVER);
+		return inputFactory;
 	}
+
+
+	private static final XMLResolver NO_OP_XML_RESOLVER = new XMLResolver() {
+		@Override
+		public Object resolveEntity(String publicID, String systemID, String base, String ns) {
+			return StreamUtils.emptyInput();
+		}
+	};
 
 }

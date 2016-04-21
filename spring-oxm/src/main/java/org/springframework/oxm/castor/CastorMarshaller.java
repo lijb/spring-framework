@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,7 +97,7 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 
 	private String encoding = DEFAULT_ENCODING;
 
-	private Class[] targetClasses;
+	private Class<?>[] targetClasses;
 
 	private String[] targetPackages;
 
@@ -162,6 +162,11 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 		this.encoding = encoding;
 	}
 
+	@Override
+	protected String getDefaultEncoding() {
+		return this.encoding;
+	}
+
 	/**
 	 * Set the locations of the Castor XML mapping files.
 	 */
@@ -170,30 +175,32 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	}
 
 	/**
-	 * Set the locations of the Castor XML Mapping files.
+	 * Set the locations of the Castor XML mapping files.
 	 */
-	public void setMappingLocations(Resource[] mappingLocations) {
+	public void setMappingLocations(Resource... mappingLocations) {
 		this.mappingLocations = mappingLocations;
 	}
 
 	/**
-	 * Set the Castor target class. Alternative means of configuring {@code CastorMarshaller} for unmarshalling
-	 * multiple classes include use of mapping files, and specifying packages with Castor descriptor classes.
+	 * Set the Castor target class.
+	 * @see #setTargetPackage
+	 * @see #setMappingLocation
 	 */
-	public void setTargetClass(Class targetClass) {
-		this.targetClasses = new Class[]{targetClass};
+	public void setTargetClass(Class<?> targetClass) {
+		this.targetClasses = new Class<?>[] {targetClass};
 	}
 
 	/**
-	 * Set the Castor target classes. Alternative means of configuring {@code CastorMarshaller} for unmarshalling
-	 * multiple classes include use of mapping files, and specifying packages with Castor descriptor classes.
+	 * Set the Castor target classes.
+	 * @see #setTargetPackages
+	 * @see #setMappingLocations
 	 */
-	public void setTargetClasses(Class[] targetClasses) {
+	public void setTargetClasses(Class<?>... targetClasses) {
 		this.targetClasses = targetClasses;
 	}
 
 	/**
-	 * Set the names of package with the Castor descriptor classes.
+	 * Set the name of a package with the Castor descriptor classes.
 	 */
 	public void setTargetPackage(String targetPackage) {
 		this.targetPackages = new String[] {targetPackage};
@@ -202,7 +209,7 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	/**
 	 * Set the names of packages with the Castor descriptor classes.
 	 */
-	public void setTargetPackages(String[] targetPackages) {
+	public void setTargetPackages(String... targetPackages) {
 		this.targetPackages = targetPackages;
 	}
 
@@ -312,16 +319,6 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	 */
 	public void setIgnoreExtraElements(boolean ignoreExtraElements) {
 		this.ignoreExtraElements = ignoreExtraElements;
-	}
-
-	/**
-	 * Set the expected root object for the unmarshaller, into which the source will be unmarshalled.
-	 * @see org.exolab.castor.xml.Unmarshaller#setObject(Object)
-	 * @deprecated in favor of {@link #setRootObject}
-	 */
-	@Deprecated
-	public void setObject(Object root) {
-		this.rootObject = root;
 	}
 
 	/**
@@ -458,8 +455,8 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	 * @see XMLContext#addMapping(org.exolab.castor.mapping.Mapping)
 	 * @see XMLContext#addClass(Class)
 	 */
-	protected XMLContext createXMLContext(Resource[] mappingLocations, Class[] targetClasses, String[] targetPackages)
-			throws MappingException, ResolverException, IOException {
+	protected XMLContext createXMLContext(Resource[] mappingLocations, Class<?>[] targetClasses,
+			String[] targetPackages) throws MappingException, ResolverException, IOException {
 
 		XMLContext context = new XMLContext();
 		if (!ObjectUtils.isEmpty(mappingLocations)) {
@@ -492,47 +489,56 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 		return true;
 	}
 
+
 	// Marshalling
 
 	@Override
-	protected final void marshalDomNode(Object graph, Node node) throws XmlMappingException {
+	protected void marshalDomNode(Object graph, Node node) throws XmlMappingException {
 		marshalSaxHandlers(graph, DomUtils.createContentHandler(node), null);
 	}
 
 	@Override
-	protected final void marshalSaxHandlers(Object graph, ContentHandler contentHandler, LexicalHandler lexicalHandler)
+	protected void marshalXmlEventWriter(Object graph, XMLEventWriter eventWriter) throws XmlMappingException {
+		ContentHandler contentHandler = StaxUtils.createContentHandler(eventWriter);
+		LexicalHandler lexicalHandler = null;
+		if (contentHandler instanceof LexicalHandler) {
+			lexicalHandler = (LexicalHandler) contentHandler;
+		}
+		marshalSaxHandlers(graph, contentHandler, lexicalHandler);
+	}
+
+	@Override
+	protected void marshalXmlStreamWriter(Object graph, XMLStreamWriter streamWriter) throws XmlMappingException {
+		ContentHandler contentHandler = StaxUtils.createContentHandler(streamWriter);
+		LexicalHandler lexicalHandler = null;
+		if (contentHandler instanceof LexicalHandler) {
+			lexicalHandler = (LexicalHandler) contentHandler;
+		}
+		marshalSaxHandlers(graph, StaxUtils.createContentHandler(streamWriter), lexicalHandler);
+	}
+
+	@Override
+	protected void marshalSaxHandlers(Object graph, ContentHandler contentHandler, LexicalHandler lexicalHandler)
 			throws XmlMappingException {
 
 		Marshaller marshaller = xmlContext.createMarshaller();
 		marshaller.setContentHandler(contentHandler);
-		marshal(graph, marshaller);
+		doMarshal(graph, marshaller);
 	}
 
 	@Override
-	protected final void marshalOutputStream(Object graph, OutputStream outputStream)
-			throws XmlMappingException, IOException {
-
+	protected void marshalOutputStream(Object graph, OutputStream outputStream) throws XmlMappingException, IOException {
 		marshalWriter(graph, new OutputStreamWriter(outputStream, encoding));
 	}
 
 	@Override
-	protected final void marshalWriter(Object graph, Writer writer) throws XmlMappingException, IOException {
+	protected void marshalWriter(Object graph, Writer writer) throws XmlMappingException, IOException {
 		Marshaller marshaller = xmlContext.createMarshaller();
 		marshaller.setWriter(writer);
-		marshal(graph, marshaller);
+		doMarshal(graph, marshaller);
 	}
 
-	@Override
-	protected final void marshalXmlEventWriter(Object graph, XMLEventWriter eventWriter) throws XmlMappingException {
-		marshalSaxHandlers(graph, StaxUtils.createContentHandler(eventWriter), null);
-	}
-
-	@Override
-	protected final void marshalXmlStreamWriter(Object graph, XMLStreamWriter streamWriter) throws XmlMappingException {
-		marshalSaxHandlers(graph, StaxUtils.createContentHandler(streamWriter), null);
-	}
-
-	private void marshal(Object graph, Marshaller marshaller) {
+	private void doMarshal(Object graph, Marshaller marshaller) {
 		try {
 			customizeMarshaller(marshaller);
 			marshaller.marshal(graph);
@@ -572,10 +578,11 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 		}
 	}
 
+
 	// Unmarshalling
 
 	@Override
-	protected final Object unmarshalDomNode(Node node) throws XmlMappingException {
+	protected Object unmarshalDomNode(Node node) throws XmlMappingException {
 		try {
 			return createUnmarshaller().unmarshal(node);
 		}
@@ -585,9 +592,9 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	}
 
 	@Override
-	protected final Object unmarshalInputStream(InputStream inputStream) throws XmlMappingException, IOException {
+	protected Object unmarshalXmlEventReader(XMLEventReader eventReader) {
 		try {
-			return createUnmarshaller().unmarshal(new InputSource(inputStream));
+			return createUnmarshaller().unmarshal(eventReader);
 		}
 		catch (XMLException ex) {
 			throw convertCastorException(ex, false);
@@ -595,9 +602,9 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	}
 
 	@Override
-	protected final Object unmarshalReader(Reader reader) throws XmlMappingException, IOException {
+	protected Object unmarshalXmlStreamReader(XMLStreamReader streamReader) {
 		try {
-			return createUnmarshaller().unmarshal(new InputSource(reader));
+			return createUnmarshaller().unmarshal(streamReader);
 		}
 		catch (XMLException ex) {
 			throw convertCastorException(ex, false);
@@ -605,7 +612,7 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	}
 
 	@Override
-	protected final Object unmarshalSaxReader(XMLReader xmlReader, InputSource inputSource)
+	protected Object unmarshalSaxReader(XMLReader xmlReader, InputSource inputSource)
 			throws XmlMappingException, IOException {
 
 		UnmarshalHandler unmarshalHandler = createUnmarshaller().createHandler();
@@ -621,9 +628,9 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	}
 
 	@Override
-	protected final Object unmarshalXmlEventReader(XMLEventReader eventReader) {
+	protected Object unmarshalInputStream(InputStream inputStream) throws XmlMappingException, IOException {
 		try {
-			return createUnmarshaller().unmarshal(eventReader);
+			return createUnmarshaller().unmarshal(new InputSource(inputStream));
 		}
 		catch (XMLException ex) {
 			throw convertCastorException(ex, false);
@@ -631,9 +638,9 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 	}
 
 	@Override
-	protected final Object unmarshalXmlStreamReader(XMLStreamReader streamReader) {
+	protected Object unmarshalReader(Reader reader) throws XmlMappingException, IOException {
 		try {
-			return createUnmarshaller().unmarshal(streamReader);
+			return createUnmarshaller().unmarshal(new InputSource(reader));
 		}
 		catch (XMLException ex) {
 			throw convertCastorException(ex, false);
@@ -678,6 +685,7 @@ public class CastorMarshaller extends AbstractMarshaller implements Initializing
 			unmarshaller.setClassLoader(this.beanClassLoader);
 		}
 	}
+
 
 	/**
 	 * Convert the given {@code XMLException} to an appropriate exception from the

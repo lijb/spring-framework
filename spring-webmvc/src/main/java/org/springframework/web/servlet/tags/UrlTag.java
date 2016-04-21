@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import javax.servlet.jsp.PageContext;
 
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.support.RequestDataValueProcessor;
-import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.util.JavaScriptUtils;
 import org.springframework.web.util.TagUtils;
 import org.springframework.web.util.UriUtils;
@@ -57,7 +56,7 @@ import org.springframework.web.util.UriUtils;
  * over direct EL substitution as the values are URL encoded.  Failure to properly
  * encode URL can leave an application vulnerable to XSS and other injection attacks.
  *
- * <p>URLs can be HTML/XML escaped by setting the {@link #setHtmlEscape(String)
+ * <p>URLs can be HTML/XML escaped by setting the {@link #setHtmlEscape(boolean)
  * 'htmlEscape'} attribute to 'true'.  Detects an HTML escaping setting, either on
  * this tag instance, the page level, or the {@code web.xml} level. The default
  * is 'false'.  When setting the URL value into a variable, escaping is not recommended.
@@ -209,7 +208,12 @@ public class UrlTag extends HtmlEscapingAwareTag implements ParamAware {
 				url.append(request.getContextPath());
 			}
 			else {
-				url.append(this.context);
+				if (this.context.endsWith("/")) {
+					url.append(this.context.substring(0, this.context.length() - 1));
+				}
+				else {
+					url.append(this.context);
+				}
 			}
 		}
 		if (this.type != UrlType.RELATIVE && this.type != UrlType.ABSOLUTE && !this.value.startsWith("/")) {
@@ -226,7 +230,7 @@ public class UrlTag extends HtmlEscapingAwareTag implements ParamAware {
 		}
 
 		// HTML and/or JavaScript escape, if demanded.
-		urlStr = isHtmlEscape() ? HtmlUtils.htmlEscape(urlStr) : urlStr;
+		urlStr = htmlEscape(urlStr);
 		urlStr = this.javaScriptEscape ? JavaScriptUtils.javaScriptEscape(urlStr) : urlStr;
 
 		return urlStr;
@@ -295,14 +299,28 @@ public class UrlTag extends HtmlEscapingAwareTag implements ParamAware {
 					throw new JspException(ex);
 				}
 			}
+			else {
+				template = URL_TEMPLATE_DELIMITER_PREFIX + "/" + param.getName() + URL_TEMPLATE_DELIMITER_SUFFIX;
+				if (uri.contains(template)) {
+					usedParams.add(param.getName());
+					try {
+						uri = uri.replace(template, UriUtils.encodePathSegment(param.getValue(), encoding));
+					}
+					catch (UnsupportedEncodingException ex) {
+						throw new JspException(ex);
+					}
+				}
+			}
 		}
 		return uri;
 	}
+
 
 	/**
 	 * Internal enum that classifies URLs by type.
 	 */
 	private enum UrlType {
+
 		CONTEXT_RELATIVE, RELATIVE, ABSOLUTE
 	}
 

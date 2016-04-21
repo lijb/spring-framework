@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,32 @@
 
 package org.springframework.orm.jpa;
 
-import org.springframework.test.jpa.AbstractJpaTests;
+import javax.persistence.EntityManager;
+import javax.persistence.Query;
+
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * @author Rod Johnson
  * @author Juergen Hoeller
  */
-public abstract class AbstractEntityManagerFactoryIntegrationTests extends AbstractJpaTests {
+@SuppressWarnings("deprecation")
+public abstract class AbstractEntityManagerFactoryIntegrationTests extends org.springframework.test.jpa.AbstractJpaTests {
 
-	public static final String[] ECLIPSELINK_CONFIG_LOCATIONS = new String[] {
+	protected static final String[] ECLIPSELINK_CONFIG_LOCATIONS = new String[] {
 			"/org/springframework/orm/jpa/eclipselink/eclipselink-manager.xml", "/org/springframework/orm/jpa/memdb.xml",
 			"/org/springframework/orm/jpa/inject.xml"};
 
-	public static final String[] HIBERNATE_CONFIG_LOCATIONS = new String[] {
+	protected static final String[] HIBERNATE_CONFIG_LOCATIONS = new String[] {
 			"/org/springframework/orm/jpa/hibernate/hibernate-manager.xml", "/org/springframework/orm/jpa/memdb.xml",
 			"/org/springframework/orm/jpa/inject.xml"};
 
-	public static final String[] OPENJPA_CONFIG_LOCATIONS = new String[] {
+	protected static final String[] OPENJPA_CONFIG_LOCATIONS = new String[] {
 			"/org/springframework/orm/jpa/openjpa/openjpa-manager.xml", "/org/springframework/orm/jpa/memdb.xml",
 			"/org/springframework/orm/jpa/inject.xml"};
 
 
-	public static Provider getProvider() {
+	private static Provider getProvider() {
 		String provider = System.getProperty("org.springframework.orm.jpa.provider");
 		if (provider != null) {
 			if (provider.toLowerCase().contains("hibernate")) {
@@ -59,7 +62,7 @@ public abstract class AbstractEntityManagerFactoryIntegrationTests extends Abstr
 	}
 
 	@Override
-	protected String[] getConfigLocations() {
+	protected String[] getConfigPaths() {
 		Provider provider = getProvider();
 		switch (provider) {
 			case ECLIPSELINK:
@@ -81,8 +84,14 @@ public abstract class AbstractEntityManagerFactoryIntegrationTests extends Abstr
 		assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
 	}
 
+	protected int countRowsInTable(EntityManager em, String tableName) {
+		Query query = em.createNativeQuery("SELECT COUNT(0) FROM " + tableName);
+		return ((Number) query.getSingleResult()).intValue();
+	}
 
-	public enum Provider {
+
+	static enum Provider {
+
 		ECLIPSELINK, HIBERNATE, OPENJPA
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,9 +39,6 @@ import org.springframework.web.portlet.util.PortletUtils;
  */
 public class PortletWebRequest extends PortletRequestAttributes implements NativeWebRequest {
 
-	private PortletResponse response;
-
-
 	/**
 	 * Create a new PortletWebRequest instance for the given request.
 	 * @param request current portlet request
@@ -56,17 +53,9 @@ public class PortletWebRequest extends PortletRequestAttributes implements Nativ
 	 * @param response current portlet response
 	 */
 	public PortletWebRequest(PortletRequest request, PortletResponse response) {
-		this(request);
-		this.response = response;
+		super(request, response);
 	}
 
-
-	/**
-	 * Exposes the native {@link PortletResponse} that we're wrapping (if any).
-	 */
-	public final PortletResponse getResponse() {
-		return this.response;
-	}
 
 	@Override
 	public Object getNativeRequest() {
@@ -79,13 +68,11 @@ public class PortletWebRequest extends PortletRequestAttributes implements Nativ
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public <T> T getNativeRequest(Class<T> requiredType) {
 		return PortletUtils.getNativeRequest(getRequest(), requiredType);
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public <T> T getNativeResponse(Class<T> requiredType) {
 		return PortletUtils.getNativeResponse(getResponse(), requiredType);
 	}
@@ -172,6 +159,16 @@ public class PortletWebRequest extends PortletRequestAttributes implements Nativ
 	 */
 	@Override
 	public boolean checkNotModified(String eTag) {
+		return false;
+	}
+
+	/**
+	 * Last-modified handling not supported for portlet requests:
+	 * As a consequence, this method always returns {@code false}.
+	 * @since 4.2
+	 */
+	@Override
+	public boolean checkNotModified(String etag, long lastModifiedTimestamp) {
 		return false;
 	}
 

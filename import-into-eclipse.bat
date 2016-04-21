@@ -17,7 +17,7 @@ echo been tested against STS %STS_TEST_VERSION%), but at the minimum you will
 echo need Eclipse + AJDT.
 echo.
 echo If you need to download and install STS, please do that now by
-echo visiting http://springsource.org/downloads/sts
+echo visiting http://spring.io/tools/sts/all 
 echo.
 echo Otherwise, press enter and we'll begin.
 
@@ -29,8 +29,8 @@ REM - generates OXM test classes to avoid errors on import into Eclipse
 REM - generates metadata for all subprojects
 REM - skips metadata gen for the root project (-x :eclipse) to work
 REM   around Eclipse's inability to import hierarchical project structures
-REM SET COMMAND="./gradlew cleanEclipse :spring-oxm:compileTestJava eclipse -x :eclipse"
-SET COMMAND=gradlew cleanEclipse :spring-oxm:compileTestJava eclipse -x :eclipse
+REM SET COMMAND="./gradlew --no-daemon cleanEclipse :spring-oxm:compileTestJava eclipse -x :eclipse"
+SET COMMAND=gradlew --no-daemon cleanEclipse :spring-oxm:compileTestJava eclipse -x :eclipse
 
 echo.
 echo -----------------------------------------------------------------------
@@ -69,7 +69,7 @@ echo When the above is complete, return here and press the enter key.
 
 pause
 
-set COMMAND=gradlew :eclipse
+set COMMAND=gradlew --no-daemon :eclipse
 
 echo.
 echo -----------------------------------------------------------------------

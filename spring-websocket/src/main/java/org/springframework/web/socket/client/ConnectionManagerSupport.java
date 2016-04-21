@@ -20,9 +20,8 @@ import java.net.URI;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
 import org.springframework.context.SmartLifecycle;
-import org.springframework.core.task.SimpleAsyncTaskExecutor;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
@@ -44,11 +43,9 @@ public abstract class ConnectionManagerSupport implements SmartLifecycle {
 
 	private boolean autoStartup = false;
 
-	private boolean isRunning = false;
+	private boolean running = false;
 
 	private int phase = Integer.MAX_VALUE;
-
-	private final TaskExecutor taskExecutor = new SimpleAsyncTaskExecutor("EndpointConnectionManager-");
 
 	private final Object lifecycleMonitor = new Object();
 
@@ -62,7 +59,6 @@ public abstract class ConnectionManagerSupport implements SmartLifecycle {
 	/**
 	 * Set whether to auto-connect to the remote endpoint after this connection manager
 	 * has been initialized and the Spring context has been refreshed.
-	 *
 	 * <p>Default is "false".
 	 */
 	public void setAutoStartup(boolean autoStartup) {
@@ -109,7 +105,7 @@ public abstract class ConnectionManagerSupport implements SmartLifecycle {
 	@Override
 	public boolean isRunning() {
 		synchronized (this.lifecycleMonitor) {
-			return this.isRunning;
+			return this.running;
 		}
 	}
 
@@ -126,35 +122,23 @@ public abstract class ConnectionManagerSupport implements SmartLifecycle {
 	}
 
 	protected void startInternal() {
-		if (logger.isDebugEnabled()) {
-			logger.debug("Starting " + this.getClass().getSimpleName());
-		}
-		this.isRunning = true;
-		this.taskExecutor.execute(new Runnable() {
-			@Override
-			public void run() {
-				synchronized (lifecycleMonitor) {
-					try {
-						logger.info("Connecting to WebSocket at " + uri);
-						openConnection();
-						logger.info("Successfully connected");
-					}
-					catch (Throwable ex) {
-						logger.error("Failed to connect", ex);
-					}
-				}
+		synchronized (lifecycleMonitor) {
+			if (logger.isInfoEnabled()) {
+				logger.info("Starting " + this.getClass().getSimpleName());
 			}
-		});
+			this.running = true;
+			openConnection();
+		}
 	}
 
-	protected abstract void openConnection() throws Exception;
+	protected abstract void openConnection();
 
 	@Override
 	public final void stop() {
 		synchronized (this.lifecycleMonitor) {
 			if (isRunning()) {
-				if (logger.isDebugEnabled()) {
-					logger.debug("Stopping " + this.getClass().getSimpleName());
+				if (logger.isInfoEnabled()) {
+					logger.info("Stopping " + this.getClass().getSimpleName());
 				}
 				try {
 					stopInternal();
@@ -163,7 +147,7 @@ public abstract class ConnectionManagerSupport implements SmartLifecycle {
 					logger.error("Failed to stop WebSocket connection", e);
 				}
 				finally {
-					this.isRunning = false;
+					this.running = false;
 				}
 			}
 		}

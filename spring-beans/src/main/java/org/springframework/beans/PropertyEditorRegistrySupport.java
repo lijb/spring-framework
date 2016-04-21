@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.beans;
 import java.beans.PropertyEditor;
 import java.io.File;
 import java.io.InputStream;
+import java.io.Reader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URI;
@@ -60,11 +61,13 @@ import org.springframework.beans.propertyeditors.InputStreamEditor;
 import org.springframework.beans.propertyeditors.LocaleEditor;
 import org.springframework.beans.propertyeditors.PatternEditor;
 import org.springframework.beans.propertyeditors.PropertiesEditor;
+import org.springframework.beans.propertyeditors.ReaderEditor;
 import org.springframework.beans.propertyeditors.StringArrayPropertyEditor;
 import org.springframework.beans.propertyeditors.TimeZoneEditor;
 import org.springframework.beans.propertyeditors.URIEditor;
 import org.springframework.beans.propertyeditors.URLEditor;
 import org.springframework.beans.propertyeditors.UUIDEditor;
+import org.springframework.beans.propertyeditors.ZoneIdEditor;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceArrayPropertyEditor;
@@ -83,6 +86,19 @@ import org.springframework.util.ClassUtils;
  * @see java.beans.PropertyEditorSupport#setValue
  */
 public class PropertyEditorRegistrySupport implements PropertyEditorRegistry {
+
+	private static Class<?> zoneIdClass;
+
+	static {
+		try {
+			zoneIdClass = ClassUtils.forName("java.time.ZoneId", PropertyEditorRegistrySupport.class.getClassLoader());
+		}
+		catch (ClassNotFoundException ex) {
+			// Java 8 ZoneId class not available
+			zoneIdClass = null;
+		}
+	}
+
 
 	private ConversionService conversionService;
 
@@ -197,11 +213,15 @@ public class PropertyEditorRegistrySupport implements PropertyEditorRegistry {
 		this.defaultEditors.put(Locale.class, new LocaleEditor());
 		this.defaultEditors.put(Pattern.class, new PatternEditor());
 		this.defaultEditors.put(Properties.class, new PropertiesEditor());
+		this.defaultEditors.put(Reader.class, new ReaderEditor());
 		this.defaultEditors.put(Resource[].class, new ResourceArrayPropertyEditor());
 		this.defaultEditors.put(TimeZone.class, new TimeZoneEditor());
 		this.defaultEditors.put(URI.class, new URIEditor());
 		this.defaultEditors.put(URL.class, new URLEditor());
 		this.defaultEditors.put(UUID.class, new UUIDEditor());
+		if (zoneIdClass != null) {
+			this.defaultEditors.put(zoneIdClass, new ZoneIdEditor());
+		}
 
 		// Default instances of collection editors.
 		// Can be overridden by registering custom instances of those as custom editors.

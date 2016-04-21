@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
 import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -114,6 +115,7 @@ public class ClassPathScanningCandidateComponentProvider implements EnvironmentC
 		if (useDefaultFilters) {
 			registerDefaultFilters();
 		}
+		Assert.notNull(environment, "Environment must not be null");
 		this.environment = environment;
 	}
 
@@ -160,10 +162,11 @@ public class ClassPathScanningCandidateComponentProvider implements EnvironmentC
 	/**
 	 * Set the Environment to use when resolving placeholders and evaluating
 	 * {@link Conditional @Conditional}-annotated component classes.
-	 * <p>The default is a {@link StandardEnvironment}
+	 * <p>The default is a {@link StandardEnvironment}.
 	 * @param environment the Environment to use
 	 */
 	public void setEnvironment(Environment environment) {
+		Assert.notNull(environment, "Environment must not be null");
 		this.environment = environment;
 		this.conditionEvaluator = null;
 	}
@@ -174,7 +177,7 @@ public class ClassPathScanningCandidateComponentProvider implements EnvironmentC
 	}
 
 	/**
-	 * Returns the {@link BeanDefinitionRegistry} used by this scanner or {@code null}.
+	 * Returns the {@link BeanDefinitionRegistry} used by this scanner, if any.
 	 */
 	protected BeanDefinitionRegistry getRegistry() {
 		return null;
@@ -237,16 +240,16 @@ public class ClassPathScanningCandidateComponentProvider implements EnvironmentC
 		ClassLoader cl = ClassPathScanningCandidateComponentProvider.class.getClassLoader();
 		try {
 			this.includeFilters.add(new AnnotationTypeFilter(
-					((Class<? extends Annotation>) cl.loadClass("javax.annotation.ManagedBean")), false));
-			logger.info("JSR-250 'javax.annotation.ManagedBean' found and supported for component scanning");
+					((Class<? extends Annotation>) ClassUtils.forName("javax.annotation.ManagedBean", cl)), false));
+			logger.debug("JSR-250 'javax.annotation.ManagedBean' found and supported for component scanning");
 		}
 		catch (ClassNotFoundException ex) {
 			// JSR-250 1.1 API (as included in Java EE 6) not available - simply skip.
 		}
 		try {
 			this.includeFilters.add(new AnnotationTypeFilter(
-					((Class<? extends Annotation>) cl.loadClass("javax.inject.Named")), false));
-			logger.info("JSR-330 'javax.inject.Named' annotation found and supported for component scanning");
+					((Class<? extends Annotation>) ClassUtils.forName("javax.inject.Named", cl)), false));
+			logger.debug("JSR-330 'javax.inject.Named' annotation found and supported for component scanning");
 		}
 		catch (ClassNotFoundException ex) {
 			// JSR-330 API not available - simply skip.
@@ -324,7 +327,7 @@ public class ClassPathScanningCandidateComponentProvider implements EnvironmentC
 	 * @return the pattern specification to be used for package searching
 	 */
 	protected String resolveBasePackage(String basePackage) {
-		return ClassUtils.convertClassNameToResourcePath(environment.resolveRequiredPlaceholders(basePackage));
+		return ClassUtils.convertClassNameToResourcePath(this.environment.resolveRequiredPlaceholders(basePackage));
 	}
 
 	/**
@@ -355,10 +358,9 @@ public class ClassPathScanningCandidateComponentProvider implements EnvironmentC
 	 */
 	private boolean isConditionMatch(MetadataReader metadataReader) {
 		if (this.conditionEvaluator == null) {
-			this.conditionEvaluator = new ConditionEvaluator(getRegistry(),
-					getEnvironment(), null, null, getResourceLoader());
+			this.conditionEvaluator = new ConditionEvaluator(getRegistry(), getEnvironment(), getResourceLoader());
 		}
-		return !conditionEvaluator.shouldSkip(metadataReader.getAnnotationMetadata());
+		return !this.conditionEvaluator.shouldSkip(metadataReader.getAnnotationMetadata());
 	}
 
 	/**

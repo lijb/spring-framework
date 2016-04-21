@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,13 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.springframework.http.Cookies;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StreamUtils;
 
 /**
- * Simple implementation of {@link ClientHttpResponse} that reads the request's body into memory,
- * thus allowing for multiple invocations of {@link #getBody()}.
+ * Simple implementation of {@link ClientHttpResponse} that reads the response's body
+ * into memory, thus allowing for multiple invocations of {@link #getBody()}.
  *
  * @author Arjen Poutsma
  * @since 3.1
@@ -70,11 +69,6 @@ final class BufferingClientHttpResponseWrapper implements ClientHttpResponse {
 			this.body = StreamUtils.copyToByteArray(this.response.getBody());
 		}
 		return new ByteArrayInputStream(this.body);
-	}
-
-	@Override
-	public Cookies getCookies() {
-		return this.response.getCookies();
 	}
 
 	@Override

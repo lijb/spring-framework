@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Collections;
-
 import javax.activation.DataHandler;
 import javax.activation.FileDataSource;
 import javax.xml.bind.JAXBElement;
@@ -31,14 +30,23 @@ import javax.xml.bind.annotation.XmlType;
 import javax.xml.namespace.QName;
 import javax.xml.transform.Result;
 import javax.xml.transform.sax.SAXResult;
+import javax.xml.transform.sax.SAXSource;
 import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
 
 import org.junit.Test;
+
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+
+import org.xml.sax.Attributes;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.InputSource;
+import org.xml.sax.Locator;
+
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.oxm.AbstractMarshallerTests;
-import org.springframework.oxm.Marshaller;
 import org.springframework.oxm.UncategorizedMappingException;
 import org.springframework.oxm.XmlMappingException;
 import org.springframework.oxm.jaxb.test.FlightType;
@@ -47,25 +55,29 @@ import org.springframework.oxm.jaxb.test.ObjectFactory;
 import org.springframework.oxm.mime.MimeContainer;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.util.ReflectionUtils;
-import org.xml.sax.Attributes;
-import org.xml.sax.ContentHandler;
-import org.xml.sax.Locator;
 
-import static org.custommonkey.xmlunit.XMLAssert.assertXMLEqual;
-import static org.junit.Assert.*;
+import static org.custommonkey.xmlunit.XMLAssert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.BDDMockito.*;
 
-public class Jaxb2MarshallerTests extends AbstractMarshallerTests {
+/**
+ * @author Arjen Poutsma
+ * @author Biju Kunjummen
+ * @author Sam Brannen
+ */
+public class Jaxb2MarshallerTests extends AbstractMarshallerTests<Jaxb2Marshaller> {
 
 	private static final String CONTEXT_PATH = "org.springframework.oxm.jaxb.test";
 
-	private Jaxb2Marshaller marshaller;
-
 	private Flights flights;
 
+
 	@Override
-	public Marshaller createMarshaller() throws Exception {
-		marshaller = new Jaxb2Marshaller();
+	protected Jaxb2Marshaller createMarshaller() throws Exception {
+		Jaxb2Marshaller marshaller = new Jaxb2Marshaller();
 		marshaller.setContextPath(CONTEXT_PATH);
 		marshaller.afterPropertiesSet();
 		return marshaller;
@@ -79,6 +91,7 @@ public class Jaxb2MarshallerTests extends AbstractMarshallerTests {
 		flights.getFlight().add(flight);
 		return flights;
 	}
+
 
 	@Test
 	public void marshalSAXResult() throws Exception {
@@ -281,12 +294,101 @@ public class Jaxb2MarshallerTests extends AbstractMarshallerTests {
 		verify(mimeContainer, times(3)).addAttachment(isA(String.class), isA(DataHandler.class));
 	}
 
+	@Test
+	public void marshalAWrappedObjectHoldingAnXmlElementDeclElement() throws Exception {
+		// SPR-10714
+		marshaller = new Jaxb2Marshaller();
+		marshaller.setPackagesToScan(new String[]{"org.springframework.oxm.jaxb"});
+		marshaller.afterPropertiesSet();
+		Airplane airplane = new Airplane();
+		airplane.setName("test");
+		StringWriter writer = new StringWriter();
+		Result result = new StreamResult(writer);
+		marshaller.marshal(airplane, result);
+		assertXMLEqual("Marshalling should use root Element",
+				writer.toString(), "<airplane><name>test</name></airplane>");
+	}
+
+	// SPR-10806
+
+	@Test
+	public void unmarshalStreamSourceWithXmlOptions() throws Exception {
+
+		final javax.xml.bind.Unmarshaller unmarshaller = mock(javax.xml.bind.Unmarshaller.class);
+		Jaxb2Marshaller marshaller = new Jaxb2Marshaller() {
+			@Override
+			protected javax.xml.bind.Unmarshaller createUnmarshaller() {
+				return unmarshaller;
+			}
+		};
+
+		// 1. external-general-entities and dtd support disabled (default)
+
+		marshaller.unmarshal(new StreamSource("1"));
+		ArgumentCaptor<SAXSource> sourceCaptor = ArgumentCaptor.forClass(SAXSource.class);
+		verify(unmarshaller).unmarshal(sourceCaptor.capture());
+
+		SAXSource result = sourceCaptor.getValue();
+		assertEquals(true, result.getXMLReader().getFeature("http://apache.org/xml/features/disallow-doctype-decl"));
+		assertEquals(false, result.getXMLReader().getFeature("http://xml.org/sax/features/external-general-entities"));
+
+		// 2. external-general-entities and dtd support enabled
+
+		reset(unmarshaller);
+		marshaller.setProcessExternalEntities(true);
+		marshaller.setSupportDtd(true);
+
+		marshaller.unmarshal(new StreamSource("1"));
+		verify(unmarshaller).unmarshal(sourceCaptor.capture());
+
+		result = sourceCaptor.getValue();
+		assertEquals(false, result.getXMLReader().getFeature("http://apache.org/xml/features/disallow-doctype-decl"));
+		assertEquals(true, result.getXMLReader().getFeature("http://xml.org/sax/features/external-general-entities"));
+	}
+
+	// SPR-10806
+
+	@Test
+	public void unmarshalSaxSourceWithXmlOptions() throws Exception {
+
+		final javax.xml.bind.Unmarshaller unmarshaller = mock(javax.xml.bind.Unmarshaller.class);
+		Jaxb2Marshaller marshaller = new Jaxb2Marshaller() {
+			@Override
+			protected javax.xml.bind.Unmarshaller createUnmarshaller() {
+				return unmarshaller;
+			}
+		};
+
+		// 1. external-general-entities and dtd support disabled (default)
+
+		marshaller.unmarshal(new SAXSource(new InputSource("1")));
+		ArgumentCaptor<SAXSource> sourceCaptor = ArgumentCaptor.forClass(SAXSource.class);
+		verify(unmarshaller).unmarshal(sourceCaptor.capture());
+
+		SAXSource result = sourceCaptor.getValue();
+		assertEquals(true, result.getXMLReader().getFeature("http://apache.org/xml/features/disallow-doctype-decl"));
+		assertEquals(false, result.getXMLReader().getFeature("http://xml.org/sax/features/external-general-entities"));
+
+		// 2. external-general-entities and dtd support enabled
+
+		reset(unmarshaller);
+		marshaller.setProcessExternalEntities(true);
+		marshaller.setSupportDtd(true);
+
+		marshaller.unmarshal(new SAXSource(new InputSource("1")));
+		verify(unmarshaller).unmarshal(sourceCaptor.capture());
+
+		result = sourceCaptor.getValue();
+		assertEquals(false, result.getXMLReader().getFeature("http://apache.org/xml/features/disallow-doctype-decl"));
+		assertEquals(true, result.getXMLReader().getFeature("http://xml.org/sax/features/external-general-entities"));
+	}
+
+
 	@XmlRootElement
 	@SuppressWarnings("unused")
 	public static class DummyRootElement {
 
 		private DummyType t = new DummyType();
-
 	}
 
 	@XmlType
@@ -294,7 +396,6 @@ public class Jaxb2MarshallerTests extends AbstractMarshallerTests {
 	public static class DummyType {
 
 		private String s = "Hello";
-
 	}
 
 	@SuppressWarnings("unused")

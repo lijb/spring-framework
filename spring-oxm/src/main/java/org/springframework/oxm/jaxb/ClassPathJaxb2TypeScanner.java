@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.xml.bind.annotation.XmlEnum;
+import javax.xml.bind.annotation.XmlRegistry;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlSeeAlso;
 import javax.xml.bind.annotation.XmlType;
@@ -42,6 +43,7 @@ import org.springframework.util.ClassUtils;
  * @author Arjen Poutsma
  * @author Juergen Hoeller
  * @author David Harrigan
+ * @author Biju Kunjummen
  * @since 3.1.1
  * @see #scanPackages()
  */
@@ -50,8 +52,11 @@ class ClassPathJaxb2TypeScanner {
 	private static final String RESOURCE_PATTERN = "/**/*.class";
 
 	private static final TypeFilter[] JAXB2_TYPE_FILTERS = new TypeFilter[] {
-			new AnnotationTypeFilter(XmlRootElement.class, false), new AnnotationTypeFilter(XmlType.class, false),
-			new AnnotationTypeFilter(XmlSeeAlso.class, false), new AnnotationTypeFilter(XmlEnum.class, false)};
+			new AnnotationTypeFilter(XmlRootElement.class, false),
+			new AnnotationTypeFilter(XmlType.class, false),
+			new AnnotationTypeFilter(XmlSeeAlso.class, false),
+			new AnnotationTypeFilter(XmlEnum.class, false),
+			new AnnotationTypeFilter(XmlRegistry.class, false)};
 
 
 	private final ResourcePatternResolver resourcePatternResolver;
@@ -99,7 +104,7 @@ class ClassPathJaxb2TypeScanner {
 
 	protected boolean isJaxb2Class(MetadataReader reader, MetadataReaderFactory factory) throws IOException {
 		for (TypeFilter filter : JAXB2_TYPE_FILTERS) {
-			if (filter.match(reader, factory)) {
+			if (filter.match(reader, factory) && !reader.getClassMetadata().isInterface() ) {
 				return true;
 			}
 		}

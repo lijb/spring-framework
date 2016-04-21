@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,9 @@ import org.springframework.jdbc.support.SQLExceptionTranslator;
  * @see HibernateTemplate
  * @see HibernateInterceptor
  * @see #setFlushMode
+ * @deprecated as of Spring 4.3, in favor of Hibernate 4.x/5.x
  */
+@Deprecated
 public abstract class HibernateAccessor implements InitializingBean, BeanFactoryAware {
 
 	/**
@@ -289,7 +291,7 @@ public abstract class HibernateAccessor implements InitializingBean, BeanFactory
 	 * @see org.hibernate.Session#enableFilter(String)
 	 * @see LocalSessionFactoryBean#setFilterDefinitions
 	 */
-	public void setFilterNames(String[] filterNames) {
+	public void setFilterNames(String... filterNames) {
 		this.filterNames = filterNames;
 	}
 
@@ -408,7 +410,7 @@ public abstract class HibernateAccessor implements InitializingBean, BeanFactory
 		if (getJdbcExceptionTranslator() != null && ex instanceof JDBCException) {
 			return convertJdbcAccessException((JDBCException) ex, getJdbcExceptionTranslator());
 		}
-		else if (GenericJDBCException.class.equals(ex.getClass())) {
+		else if (GenericJDBCException.class == ex.getClass()) {
 			return convertJdbcAccessException((GenericJDBCException) ex, getDefaultJdbcExceptionTranslator());
 		}
 		return SessionFactoryUtils.convertHibernateAccessException(ex);
@@ -466,8 +468,8 @@ public abstract class HibernateAccessor implements InitializingBean, BeanFactory
 	protected void enableFilters(Session session) {
 		String[] filterNames = getFilterNames();
 		if (filterNames != null) {
-			for (int i = 0; i < filterNames.length; i++) {
-				session.enableFilter(filterNames[i]);
+			for (String filterName : filterNames) {
+				session.enableFilter(filterName);
 			}
 		}
 	}
@@ -481,8 +483,8 @@ public abstract class HibernateAccessor implements InitializingBean, BeanFactory
 	protected void disableFilters(Session session) {
 		String[] filterNames = getFilterNames();
 		if (filterNames != null) {
-			for (int i = 0; i < filterNames.length; i++) {
-				session.disableFilter(filterNames[i]);
+			for (String filterName : filterNames) {
+				session.disableFilter(filterName);
 			}
 		}
 	}

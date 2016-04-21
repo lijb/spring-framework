@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,7 @@
 
 package org.springframework.util;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
 import java.io.FilterOutputStream;
@@ -26,7 +27,6 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.Charset;
-
 
 /**
  * Simple utility methods for dealing with streams. The copy methods of this class are
@@ -43,6 +43,8 @@ import java.nio.charset.Charset;
 public abstract class StreamUtils {
 
 	public static final int BUFFER_SIZE = 4096;
+
+	private static final byte[] EMPTY_CONTENT = new byte[0];
 
 
 	/**
@@ -130,7 +132,35 @@ public abstract class StreamUtils {
 	}
 
 	/**
-	 * Returns a variant of the given {@link InputStream} where calling
+	 * Drain the remaining content of the given InputStream.
+	 * Leaves the InputStream open when done.
+	 * @param in the InputStream to drain
+	 * @return the number of bytes read
+	 * @throws IOException in case of I/O errors
+	 * @since 4.3.0
+	 */
+	public static int drain(InputStream in) throws IOException {
+		Assert.notNull(in, "No InputStream specified");
+		byte[] buffer = new byte[BUFFER_SIZE];
+		int bytesRead = -1;
+		int byteCount = 0;
+		while ((bytesRead = in.read(buffer)) != -1) {
+			byteCount += bytesRead;
+		}
+		return byteCount;
+	}
+
+	/**
+	 * Return an efficient empty {@link InputStream}.
+	 * @return a {@link ByteArrayInputStream} based on an empty byte array
+	 * @since 4.2.2
+	 */
+	public static InputStream emptyInput() {
+		return new ByteArrayInputStream(EMPTY_CONTENT);
+	}
+
+	/**
+	 * Return a variant of the given {@link InputStream} where calling
 	 * {@link InputStream#close() close()} has no effect.
 	 * @param in the InputStream to decorate
 	 * @return a version of the InputStream that ignores calls to close
@@ -141,7 +171,7 @@ public abstract class StreamUtils {
 	}
 
 	/**
-	 * Returns a variant of the given {@link OutputStream} where calling
+	 * Return a variant of the given {@link OutputStream} where calling
 	 * {@link OutputStream#close() close()} has no effect.
 	 * @param out the OutputStream to decorate
 	 * @return a version of the OutputStream that ignores calls to close

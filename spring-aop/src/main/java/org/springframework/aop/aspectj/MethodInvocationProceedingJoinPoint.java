@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,8 @@ import org.aspectj.lang.reflect.SourceLocation;
 import org.aspectj.runtime.internal.AroundClosure;
 
 import org.springframework.aop.ProxyMethodInvocation;
-import org.springframework.core.LocalVariableTableParameterNameDiscoverer;
+import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.util.Assert;
 
 /**
@@ -50,6 +51,8 @@ import org.springframework.util.Assert;
  * @since 2.0
  */
 public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint, JoinPoint.StaticPart {
+
+	private static final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
 	private final ProxyMethodInvocation methodInvocation;
 
@@ -186,7 +189,7 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 		}
 
 		@Override
-		public Class getDeclaringType() {
+		public Class<?> getDeclaringType() {
 			return methodInvocation.getMethod().getDeclaringClass();
 		}
 
@@ -196,7 +199,7 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 		}
 
 		@Override
-		public Class getReturnType() {
+		public Class<?> getReturnType() {
 			return methodInvocation.getMethod().getReturnType();
 		}
 
@@ -206,20 +209,20 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 		}
 
 		@Override
-		public Class[] getParameterTypes() {
+		public Class<?>[] getParameterTypes() {
 			return methodInvocation.getMethod().getParameterTypes();
 		}
 
 		@Override
 		public String[] getParameterNames() {
 			if (this.parameterNames == null) {
-				this.parameterNames = (new LocalVariableTableParameterNameDiscoverer()).getParameterNames(getMethod());
+				this.parameterNames = parameterNameDiscoverer.getParameterNames(getMethod());
 			}
 			return this.parameterNames;
 		}
 
 		@Override
-		public Class[] getExceptionTypes() {
+		public Class<?>[] getExceptionTypes() {
 			return methodInvocation.getMethod().getExceptionTypes();
 		}
 
@@ -240,6 +243,7 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 
 		private String toString(boolean includeModifier, boolean includeReturnTypeAndArgs,
 				boolean useLongReturnAndArgumentTypeName, boolean useLongTypeName) {
+
 			StringBuilder sb = new StringBuilder();
 			if (includeModifier) {
 				sb.append(Modifier.toString(getModifiers()));
@@ -253,14 +257,15 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 			sb.append(".");
 			sb.append(getMethod().getName());
 			sb.append("(");
-			Class[] parametersTypes = getParameterTypes();
+			Class<?>[] parametersTypes = getParameterTypes();
 			appendTypes(sb, parametersTypes, includeReturnTypeAndArgs, useLongReturnAndArgumentTypeName);
 			sb.append(")");
 			return sb.toString();
 		}
 
-		private void appendTypes(StringBuilder sb, Class<?>[] types,
-				boolean includeArgs, boolean useLongReturnAndArgumentTypeName) {
+		private void appendTypes(StringBuilder sb, Class<?>[] types, boolean includeArgs,
+				boolean useLongReturnAndArgumentTypeName) {
+
 			if (includeArgs) {
 				for (int size = types.length, i = 0; i < size; i++) {
 					appendType(sb, types[i], useLongReturnAndArgumentTypeName);
@@ -294,7 +299,7 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 	private class SourceLocationImpl implements SourceLocation {
 
 		@Override
-		public Class getWithinType() {
+		public Class<?> getWithinType() {
 			if (methodInvocation.getThis() == null) {
 				throw new UnsupportedOperationException("No source location joinpoint available: target is null");
 			}
@@ -312,6 +317,7 @@ public class MethodInvocationProceedingJoinPoint implements ProceedingJoinPoint,
 		}
 
 		@Override
+		@Deprecated
 		public int getColumn() {
 			throw new UnsupportedOperationException();
 		}

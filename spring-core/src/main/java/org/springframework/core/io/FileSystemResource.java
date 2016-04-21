@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ public class FileSystemResource extends AbstractResource implements WritableReso
 
 
 	/**
-	 * Create a new FileSystemResource from a File handle.
+	 * Create a new {@code FileSystemResource} from a {@link File} handle.
 	 * <p>Note: When building relative resources via {@link #createRelative},
 	 * the relative path will apply <i>at the same directory level</i>:
 	 * e.g. new File("C:/dir1"), relative path "dir2" -> "C:/dir2"!
@@ -62,7 +62,7 @@ public class FileSystemResource extends AbstractResource implements WritableReso
 	}
 
 	/**
-	 * Create a new FileSystemResource from a file path.
+	 * Create a new {@code FileSystemResource} from a file path.
 	 * <p>Note: When building relative resources via {@link #createRelative},
 	 * it makes a difference whether the specified resource base path here
 	 * ends with a slash or not. In the case of "C:/dir1/", relative paths
@@ -76,6 +76,7 @@ public class FileSystemResource extends AbstractResource implements WritableReso
 		this.file = new File(path);
 		this.path = StringUtils.cleanPath(path);
 	}
+
 
 	/**
 	 * Return the file path for this resource.
@@ -112,6 +113,26 @@ public class FileSystemResource extends AbstractResource implements WritableReso
 	@Override
 	public InputStream getInputStream() throws IOException {
 		return new FileInputStream(this.file);
+	}
+
+	/**
+	 * This implementation checks whether the underlying file is marked as writable
+	 * (and corresponds to an actual file with content, not to a directory).
+	 * @see java.io.File#canWrite()
+	 * @see java.io.File#isDirectory()
+	 */
+	@Override
+	public boolean isWritable() {
+		return (this.file.canWrite() && !this.file.isDirectory());
+	}
+
+	/**
+	 * This implementation opens a FileOutputStream for the underlying file.
+	 * @see java.io.FileOutputStream
+	 */
+	@Override
+	public OutputStream getOutputStream() throws IOException {
+		return new FileOutputStream(this.file);
 	}
 
 	/**
@@ -176,29 +197,6 @@ public class FileSystemResource extends AbstractResource implements WritableReso
 	@Override
 	public String getDescription() {
 		return "file [" + this.file.getAbsolutePath() + "]";
-	}
-
-
-	// implementation of WritableResource
-
-	/**
-	 * This implementation checks whether the underlying file is marked as writable
-	 * (and corresponds to an actual file with content, not to a directory).
-	 * @see java.io.File#canWrite()
-	 * @see java.io.File#isDirectory()
-	 */
-	@Override
-	public boolean isWritable() {
-		return (this.file.canWrite() && !this.file.isDirectory());
-	}
-
-	/**
-	 * This implementation opens a FileOutputStream for the underlying file.
-	 * @see java.io.FileOutputStream
-	 */
-	@Override
-	public OutputStream getOutputStream() throws IOException {
-		return new FileOutputStream(this.file);
 	}
 
 

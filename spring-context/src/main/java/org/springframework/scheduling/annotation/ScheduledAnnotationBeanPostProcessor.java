@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,29 +17,42 @@
 package org.springframework.scheduling.annotation;
 
 import java.lang.reflect.Method;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import org.springframework.aop.support.AopUtils;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.EmbeddedValueResolverAware;
 import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.core.MethodIntrospector;
 import org.springframework.core.Ordered;
-import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
 import org.springframework.scheduling.config.CronTask;
 import org.springframework.scheduling.config.IntervalTask;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
+import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.scheduling.support.ScheduledMethodRunnable;
 import org.springframework.util.Assert;
-import org.springframework.util.ReflectionUtils;
-import org.springframework.util.ReflectionUtils.MethodCallback;
+import org.springframework.util.StringUtils;
 import org.springframework.util.StringValueResolver;
 
 /**
@@ -48,41 +61,70 @@ import org.springframework.util.StringValueResolver;
  * to the "fixedRate", "fixedDelay", or "cron" expression provided via the annotation.
  *
  * <p>This post-processor is automatically registered by Spring's
- * {@code <task:annotation-driven>} XML element, and also by the @{@link EnableScheduling}
- * annotation.
+ * {@code <task:annotation-driven>} XML element, and also by the
+ * @{@link EnableScheduling} annotation.
  *
- * <p>Auto-detects any {@link SchedulingConfigurer} instances in the container,
- * allowing for customization of the scheduler to be used or for fine-grained control
- * over task registration (e.g. registration of {@link Trigger} tasks.
- * See @{@link EnableScheduling} Javadoc for complete usage details.
+ * <p>Autodetects any {@link SchedulingConfigurer} instances in the container,
+ * allowing for customization of the scheduler to be used or for fine-grained
+ * control over task registration (e.g. registration of {@link Trigger} tasks.
+ * See the @{@link EnableScheduling} javadocs for complete usage details.
  *
  * @author Mark Fisher
  * @author Juergen Hoeller
  * @author Chris Beams
+ * @author Elizabeth Chatman
  * @since 3.0
  * @see Scheduled
  * @see EnableScheduling
  * @see SchedulingConfigurer
  * @see org.springframework.scheduling.TaskScheduler
  * @see org.springframework.scheduling.config.ScheduledTaskRegistrar
+ * @see AsyncAnnotationBeanPostProcessor
  */
-public class ScheduledAnnotationBeanPostProcessor
-		implements BeanPostProcessor, Ordered, EmbeddedValueResolverAware, ApplicationContextAware,
-		ApplicationListener<ContextRefreshedEvent>, DisposableBean {
+public class ScheduledAnnotationBeanPostProcessor implements BeanPostProcessor, Ordered,
+		EmbeddedValueResolverAware, BeanFactoryAware, ApplicationContextAware,
+		SmartInitializingSingleton, ApplicationListener<ContextRefreshedEvent>, DisposableBean {
+
+	/**
+	 * The default name of the {@link TaskScheduler} bean to pick up: "taskScheduler".
+	 * <p>Note that the initial lookup happens by type; this is just the fallback
+	 * in case of multiple scheduler beans found in the context.
+	 * @since 4.2
+	 */
+	public static final String DEFAULT_TASK_SCHEDULER_BEAN_NAME = "taskScheduler";
+
+
+	protected final Log logger = LogFactory.getLog(getClass());
 
 	private Object scheduler;
 
 	private StringValueResolver embeddedValueResolver;
 
+	private BeanFactory beanFactory;
+
 	private ApplicationContext applicationContext;
 
 	private final ScheduledTaskRegistrar registrar = new ScheduledTaskRegistrar();
 
+	private final Set<Class<?>> nonAnnotatedClasses =
+			Collections.newSetFromMap(new ConcurrentHashMap<Class<?>, Boolean>(64));
+
+
+	@Override
+	public int getOrder() {
+		return LOWEST_PRECEDENCE;
+	}
 
 	/**
 	 * Set the {@link org.springframework.scheduling.TaskScheduler} that will invoke
 	 * the scheduled methods, or a {@link java.util.concurrent.ScheduledExecutorService}
 	 * to be wrapped as a TaskScheduler.
+	 * <p>If not specified, default scheduler resolution will apply: searching for a
+	 * unique {@link TaskScheduler} bean in the context, or for a {@link TaskScheduler}
+	 * bean named "taskScheduler" otherwise; the same lookup will also be performed for
+	 * a {@link ScheduledExecutorService} bean. If neither of the two is resolvable,
+	 * a local single-threaded default scheduler will be created within the registrar.
+	 * @see #DEFAULT_TASK_SCHEDULER_BEAN_NAME
 	 */
 	public void setScheduler(Object scheduler) {
 		this.scheduler = scheduler;
@@ -93,15 +135,114 @@ public class ScheduledAnnotationBeanPostProcessor
 		this.embeddedValueResolver = resolver;
 	}
 
+	/**
+	 * Making a {@link BeanFactory} available is optional; if not set,
+	 * {@link SchedulingConfigurer} beans won't get autodetected and
+	 * a {@link #setScheduler scheduler} has to be explicitly configured.
+	 */
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) {
+		this.beanFactory = beanFactory;
+	}
+
+	/**
+	 * Setting an {@link ApplicationContext} is optional: If set, registered
+	 * tasks will be activated in the {@link ContextRefreshedEvent} phase;
+	 * if not set, it will happen at {@link #afterSingletonsInstantiated} time.
+	 */
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) {
 		this.applicationContext = applicationContext;
+		if (this.beanFactory == null) {
+			this.beanFactory = applicationContext;
+		}
+	}
+
+
+	@Override
+	public void afterSingletonsInstantiated() {
+		if (this.applicationContext == null) {
+			// Not running in an ApplicationContext -> register tasks early...
+			finishRegistration();
+		}
 	}
 
 	@Override
-	public int getOrder() {
-		return LOWEST_PRECEDENCE;
+	public void onApplicationEvent(ContextRefreshedEvent event) {
+		if (event.getApplicationContext() == this.applicationContext) {
+			// Running in an ApplicationContext -> register tasks this late...
+			// giving other ContextRefreshedEvent listeners a chance to perform
+			// their work at the same time (e.g. Spring Batch's job registration).
+			finishRegistration();
+		}
 	}
+
+	private void finishRegistration() {
+		if (this.scheduler != null) {
+			this.registrar.setScheduler(this.scheduler);
+		}
+
+		if (this.beanFactory instanceof ListableBeanFactory) {
+			Map<String, SchedulingConfigurer> configurers =
+					((ListableBeanFactory) this.beanFactory).getBeansOfType(SchedulingConfigurer.class);
+			for (SchedulingConfigurer configurer : configurers.values()) {
+				configurer.configureTasks(this.registrar);
+			}
+		}
+
+		if (this.registrar.hasTasks() && this.registrar.getScheduler() == null) {
+			Assert.state(this.beanFactory != null, "BeanFactory must be set to find scheduler by type");
+			try {
+				// Search for TaskScheduler bean...
+				this.registrar.setTaskScheduler(this.beanFactory.getBean(TaskScheduler.class));
+			}
+			catch (NoUniqueBeanDefinitionException ex) {
+				try {
+					this.registrar.setTaskScheduler(
+							this.beanFactory.getBean(DEFAULT_TASK_SCHEDULER_BEAN_NAME, TaskScheduler.class));
+				}
+				catch (NoSuchBeanDefinitionException ex2) {
+					if (logger.isInfoEnabled()) {
+						logger.info("More than one TaskScheduler bean exists within the context, and " +
+								"none is named 'taskScheduler'. Mark one of them as primary or name it 'taskScheduler' " +
+								"(possibly as an alias); or implement the SchedulingConfigurer interface and call " +
+								"ScheduledTaskRegistrar#setScheduler explicitly within the configureTasks() callback: " +
+								ex.getBeanNamesFound());
+					}
+				}
+			}
+			catch (NoSuchBeanDefinitionException ex) {
+				logger.debug("Could not find default TaskScheduler bean", ex);
+				// Search for ScheduledExecutorService bean next...
+				try {
+					this.registrar.setScheduler(this.beanFactory.getBean(ScheduledExecutorService.class));
+				}
+				catch (NoUniqueBeanDefinitionException ex2) {
+					try {
+						this.registrar.setScheduler(
+								this.beanFactory.getBean(DEFAULT_TASK_SCHEDULER_BEAN_NAME, ScheduledExecutorService.class));
+					}
+					catch (NoSuchBeanDefinitionException ex3) {
+						if (logger.isInfoEnabled()) {
+							logger.info("More than one ScheduledExecutorService bean exists within the context, and " +
+									"none is named 'taskScheduler'. Mark one of them as primary or name it 'taskScheduler' " +
+									"(possibly as an alias); or implement the SchedulingConfigurer interface and call " +
+									"ScheduledTaskRegistrar#setScheduler explicitly within the configureTasks() callback: " +
+									ex2.getBeanNamesFound());
+						}
+					}
+				}
+				catch (NoSuchBeanDefinitionException ex2) {
+					logger.debug("Could not find default ScheduledExecutorService bean", ex2);
+					// Giving up -> falling back to default scheduler within the registrar...
+					logger.info("No TaskScheduler/ScheduledExecutorService bean found for scheduled processing");
+				}
+			}
+		}
+
+		this.registrar.afterPropertiesSet();
+	}
+
 
 	@Override
 	public Object postProcessBeforeInitialization(Object bean, String beanName) {
@@ -110,167 +251,154 @@ public class ScheduledAnnotationBeanPostProcessor
 
 	@Override
 	public Object postProcessAfterInitialization(final Object bean, String beanName) {
-		final Class<?> targetClass = AopUtils.getTargetClass(bean);
-		ReflectionUtils.doWithMethods(targetClass, new MethodCallback() {
-			@Override
-			public void doWith(Method method) throws IllegalArgumentException, IllegalAccessException {
-				Scheduled annotation = AnnotationUtils.getAnnotation(method, Scheduled.class);
-				if (annotation != null) {
-					try {
-						Assert.isTrue(void.class.equals(method.getReturnType()),
-								"Only void-returning methods may be annotated with @Scheduled");
-						Assert.isTrue(method.getParameterTypes().length == 0,
-								"Only no-arg methods may be annotated with @Scheduled");
-						if (AopUtils.isJdkDynamicProxy(bean)) {
-							try {
-								// found a @Scheduled method on the target class for this JDK proxy -> is it
-								// also present on the proxy itself?
-								method = bean.getClass().getMethod(method.getName(), method.getParameterTypes());
-							}
-							catch (SecurityException ex) {
-								ReflectionUtils.handleReflectionException(ex);
-							}
-							catch (NoSuchMethodException ex) {
-								throw new IllegalStateException(String.format(
-										"@Scheduled method '%s' found on bean target class '%s', " +
-										"but not found in any interface(s) for bean JDK proxy. Either " +
-										"pull the method up to an interface or switch to subclass (CGLIB) " +
-										"proxies by setting proxy-target-class/proxyTargetClass " +
-										"attribute to 'true'", method.getName(), targetClass.getSimpleName()));
-							}
+		Class<?> targetClass = AopUtils.getTargetClass(bean);
+		if (!this.nonAnnotatedClasses.contains(targetClass)) {
+			Map<Method, Set<Scheduled>> annotatedMethods = MethodIntrospector.selectMethods(targetClass,
+					new MethodIntrospector.MetadataLookup<Set<Scheduled>>() {
+						@Override
+						public Set<Scheduled> inspect(Method method) {
+							Set<Scheduled> scheduledMethods =
+									AnnotatedElementUtils.getMergedRepeatableAnnotations(method, Scheduled.class, Schedules.class);
+							return (!scheduledMethods.isEmpty() ? scheduledMethods : null);
 						}
-						Runnable runnable = new ScheduledMethodRunnable(bean, method);
-						boolean processedSchedule = false;
-						String errorMessage = "Exactly one of the 'cron', 'fixedDelay(String)', or 'fixedRate(String)' attributes is required";
-						// Determine initial delay
-						long initialDelay = annotation.initialDelay();
-						String initialDelayString = annotation.initialDelayString();
-						if (!"".equals(initialDelayString)) {
-							Assert.isTrue(initialDelay < 0, "Specify 'initialDelay' or 'initialDelayString', not both");
-							if (embeddedValueResolver != null) {
-								initialDelayString = embeddedValueResolver.resolveStringValue(initialDelayString);
-							}
-							try {
-								initialDelay = Integer.parseInt(initialDelayString);
-							}
-							catch (NumberFormatException ex) {
-								throw new IllegalArgumentException(
-										"Invalid initialDelayString value \"" + initialDelayString + "\" - cannot parse into integer");
-							}
-						}
-						// Check cron expression
-						String cron = annotation.cron();
-						if (!"".equals(cron)) {
-							Assert.isTrue(initialDelay == -1, "'initialDelay' not supported for cron triggers");
-							processedSchedule = true;
-							if (embeddedValueResolver != null) {
-								cron = embeddedValueResolver.resolveStringValue(cron);
-							}
-							registrar.addCronTask(new CronTask(runnable, cron));
-						}
-						// At this point we don't need to differentiate between initial delay set or not anymore
-						if (initialDelay < 0) {
-							initialDelay = 0;
-						}
-						// Check fixed delay
-						long fixedDelay = annotation.fixedDelay();
-						if (fixedDelay >= 0) {
-							Assert.isTrue(!processedSchedule, errorMessage);
-							processedSchedule = true;
-							registrar.addFixedDelayTask(new IntervalTask(runnable, fixedDelay, initialDelay));
-						}
-						String fixedDelayString = annotation.fixedDelayString();
-						if (!"".equals(fixedDelayString)) {
-							Assert.isTrue(!processedSchedule, errorMessage);
-							processedSchedule = true;
-							if (embeddedValueResolver != null) {
-								fixedDelayString = embeddedValueResolver.resolveStringValue(fixedDelayString);
-							}
-							try {
-								fixedDelay = Integer.parseInt(fixedDelayString);
-							}
-							catch (NumberFormatException ex) {
-								throw new IllegalArgumentException(
-										"Invalid fixedDelayString value \"" + fixedDelayString + "\" - cannot parse into integer");
-							}
-							registrar.addFixedDelayTask(new IntervalTask(runnable, fixedDelay, initialDelay));
-						}
-						// Check fixed rate
-						long fixedRate = annotation.fixedRate();
-						if (fixedRate >= 0) {
-							Assert.isTrue(!processedSchedule, errorMessage);
-							processedSchedule = true;
-							registrar.addFixedRateTask(new IntervalTask(runnable, fixedRate, initialDelay));
-						}
-						String fixedRateString = annotation.fixedRateString();
-						if (!"".equals(fixedRateString)) {
-							Assert.isTrue(!processedSchedule, errorMessage);
-							processedSchedule = true;
-							if (embeddedValueResolver != null) {
-								fixedRateString = embeddedValueResolver.resolveStringValue(fixedRateString);
-							}
-							try {
-								fixedRate = Integer.parseInt(fixedRateString);
-							}
-							catch (NumberFormatException ex) {
-								throw new IllegalArgumentException(
-										"Invalid fixedRateString value \"" + fixedRateString + "\" - cannot parse into integer");
-							}
-							registrar.addFixedRateTask(new IntervalTask(runnable, fixedRate, initialDelay));
-						}
-						// Check whether we had any attribute set
-						Assert.isTrue(processedSchedule, errorMessage);
-					}
-					catch (IllegalArgumentException ex) {
-						throw new IllegalStateException(
-								"Encountered invalid @Scheduled method '" + method.getName() + "': " + ex.getMessage());
-					}
+					});
+			if (annotatedMethods.isEmpty()) {
+				this.nonAnnotatedClasses.add(targetClass);
+				if (logger.isTraceEnabled()) {
+					logger.trace("No @Scheduled annotations found on bean class: " + bean.getClass());
 				}
 			}
-		});
+			else {
+				// Non-empty set of methods
+				for (Map.Entry<Method, Set<Scheduled>> entry : annotatedMethods.entrySet()) {
+					Method method = entry.getKey();
+					for (Scheduled scheduled : entry.getValue()) {
+						processScheduled(scheduled, method, bean);
+					}
+				}
+				if (logger.isDebugEnabled()) {
+					logger.debug(annotatedMethods.size() + " @Scheduled methods processed on bean '" + beanName +
+							"': " + annotatedMethods);
+				}
+			}
+		}
 		return bean;
 	}
 
-	@Override
-	public void onApplicationEvent(ContextRefreshedEvent event) {
-		if (event.getApplicationContext() != this.applicationContext) {
-			return;
-		}
-		Map<String, SchedulingConfigurer> configurers =
-				this.applicationContext.getBeansOfType(SchedulingConfigurer.class);
-		if (this.scheduler != null) {
-			this.registrar.setScheduler(this.scheduler);
-		}
-		for (SchedulingConfigurer configurer : configurers.values()) {
-			configurer.configureTasks(this.registrar);
-		}
-		if (this.registrar.hasTasks() && this.registrar.getScheduler() == null) {
-			Map<String, ? super Object> schedulers = new HashMap<String, Object>();
-			schedulers.putAll(applicationContext.getBeansOfType(TaskScheduler.class));
-			schedulers.putAll(applicationContext.getBeansOfType(ScheduledExecutorService.class));
-			if (schedulers.size() == 0) {
-				// do nothing -> fall back to default scheduler
+	protected void processScheduled(Scheduled scheduled, Method method, Object bean) {
+		try {
+			Assert.isTrue(method.getParameterTypes().length == 0,
+					"Only no-arg methods may be annotated with @Scheduled");
+
+			Method invocableMethod = AopUtils.selectInvocableMethod(method, bean.getClass());
+			Runnable runnable = new ScheduledMethodRunnable(bean, invocableMethod);
+			boolean processedSchedule = false;
+			String errorMessage =
+					"Exactly one of the 'cron', 'fixedDelay(String)', or 'fixedRate(String)' attributes is required";
+
+			// Determine initial delay
+			long initialDelay = scheduled.initialDelay();
+			String initialDelayString = scheduled.initialDelayString();
+			if (StringUtils.hasText(initialDelayString)) {
+				Assert.isTrue(initialDelay < 0, "Specify 'initialDelay' or 'initialDelayString', not both");
+				if (this.embeddedValueResolver != null) {
+					initialDelayString = this.embeddedValueResolver.resolveStringValue(initialDelayString);
+				}
+				try {
+					initialDelay = Long.parseLong(initialDelayString);
+				}
+				catch (NumberFormatException ex) {
+					throw new IllegalArgumentException(
+							"Invalid initialDelayString value \"" + initialDelayString + "\" - cannot parse into integer");
+				}
 			}
-			else if (schedulers.size() == 1) {
-				this.registrar.setScheduler(schedulers.values().iterator().next());
+
+			// Check cron expression
+			String cron = scheduled.cron();
+			if (StringUtils.hasText(cron)) {
+				Assert.isTrue(initialDelay == -1, "'initialDelay' not supported for cron triggers");
+				processedSchedule = true;
+				String zone = scheduled.zone();
+				if (this.embeddedValueResolver != null) {
+					cron = this.embeddedValueResolver.resolveStringValue(cron);
+					zone = this.embeddedValueResolver.resolveStringValue(zone);
+				}
+				TimeZone timeZone;
+				if (StringUtils.hasText(zone)) {
+					timeZone = StringUtils.parseTimeZoneString(zone);
+				}
+				else {
+					timeZone = TimeZone.getDefault();
+				}
+				this.registrar.addCronTask(new CronTask(runnable, new CronTrigger(cron, timeZone)));
 			}
-			else if (schedulers.size() >= 2){
-				throw new IllegalStateException(
-						"More than one TaskScheduler and/or ScheduledExecutorService  " +
-						"exist within the context. Remove all but one of the beans; or " +
-						"implement the SchedulingConfigurer interface and call " +
-						"ScheduledTaskRegistrar#setScheduler explicitly within the " +
-						"configureTasks() callback. Found the following beans: " + schedulers.keySet());
+
+			// At this point we don't need to differentiate between initial delay set or not anymore
+			if (initialDelay < 0) {
+				initialDelay = 0;
 			}
+
+			// Check fixed delay
+			long fixedDelay = scheduled.fixedDelay();
+			if (fixedDelay >= 0) {
+				Assert.isTrue(!processedSchedule, errorMessage);
+				processedSchedule = true;
+				this.registrar.addFixedDelayTask(new IntervalTask(runnable, fixedDelay, initialDelay));
+			}
+			String fixedDelayString = scheduled.fixedDelayString();
+			if (StringUtils.hasText(fixedDelayString)) {
+				Assert.isTrue(!processedSchedule, errorMessage);
+				processedSchedule = true;
+				if (this.embeddedValueResolver != null) {
+					fixedDelayString = this.embeddedValueResolver.resolveStringValue(fixedDelayString);
+				}
+				try {
+					fixedDelay = Long.parseLong(fixedDelayString);
+				}
+				catch (NumberFormatException ex) {
+					throw new IllegalArgumentException(
+							"Invalid fixedDelayString value \"" + fixedDelayString + "\" - cannot parse into integer");
+				}
+				this.registrar.addFixedDelayTask(new IntervalTask(runnable, fixedDelay, initialDelay));
+			}
+
+			// Check fixed rate
+			long fixedRate = scheduled.fixedRate();
+			if (fixedRate >= 0) {
+				Assert.isTrue(!processedSchedule, errorMessage);
+				processedSchedule = true;
+				this.registrar.addFixedRateTask(new IntervalTask(runnable, fixedRate, initialDelay));
+			}
+			String fixedRateString = scheduled.fixedRateString();
+			if (StringUtils.hasText(fixedRateString)) {
+				Assert.isTrue(!processedSchedule, errorMessage);
+				processedSchedule = true;
+				if (this.embeddedValueResolver != null) {
+					fixedRateString = this.embeddedValueResolver.resolveStringValue(fixedRateString);
+				}
+				try {
+					fixedRate = Long.parseLong(fixedRateString);
+				}
+				catch (NumberFormatException ex) {
+					throw new IllegalArgumentException(
+							"Invalid fixedRateString value \"" + fixedRateString + "\" - cannot parse into integer");
+				}
+				this.registrar.addFixedRateTask(new IntervalTask(runnable, fixedRate, initialDelay));
+			}
+
+			// Check whether we had any attribute set
+			Assert.isTrue(processedSchedule, errorMessage);
 		}
-		this.registrar.afterPropertiesSet();
+		catch (IllegalArgumentException ex) {
+			throw new IllegalStateException(
+					"Encountered invalid @Scheduled method '" + method.getName() + "': " + ex.getMessage());
+		}
 	}
 
+
 	@Override
-	public void destroy() throws Exception {
-		if (this.registrar != null) {
-			this.registrar.destroy();
-		}
+	public void destroy() {
+		this.registrar.destroy();
 	}
 
 }

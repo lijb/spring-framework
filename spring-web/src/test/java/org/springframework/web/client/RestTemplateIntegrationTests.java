@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,36 +16,20 @@
 
 package org.springframework.web.client;
 
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-import javax.servlet.GenericServlet;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
-import org.apache.commons.fileupload.FileItem;
-import org.apache.commons.fileupload.FileItemFactory;
-import org.apache.commons.fileupload.FileUploadException;
-import org.apache.commons.fileupload.disk.DiskFileItemFactory;
-import org.apache.commons.fileupload.servlet.ServletFileUpload;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonTypeName;
 import org.junit.Test;
+
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
@@ -53,63 +37,24 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.util.FileCopyUtils;
+import org.springframework.http.converter.json.MappingJacksonValue;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.util.SocketUtils;
+
+import com.fasterxml.jackson.annotation.JsonView;
 
 import static org.junit.Assert.*;
 
-/** @author Arjen Poutsma */
-public class RestTemplateIntegrationTests {
+/**
+ * @author Arjen Poutsma
+ */
+public class RestTemplateIntegrationTests extends AbstractJettyServerTestCase {
 
-	private RestTemplate template;
+	private final RestTemplate template = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
 
-	private static Server jettyServer;
-
-	private static String helloWorld = "H\u00e9llo W\u00f6rld";
-
-	private static String baseUrl;
-
-	private static MediaType contentType;
-
-	@BeforeClass
-	public static void startJettyServer() throws Exception {
-		int port = SocketUtils.findAvailableTcpPort();
-		jettyServer = new Server(port);
-		baseUrl = "http://localhost:" + port;
-		ServletContextHandler handler = new ServletContextHandler();
-		byte[] bytes = helloWorld.getBytes("UTF-8");
-		contentType = new MediaType("text", "plain", Collections.singletonMap("charset", "UTF-8"));
-		handler.addServlet(new ServletHolder(new GetServlet(bytes, contentType)), "/get");
-		handler.addServlet(new ServletHolder(new GetServlet(new byte[0], contentType)), "/get/nothing");
-		handler.addServlet(new ServletHolder(new GetServlet(bytes, null)), "/get/nocontenttype");
-		handler.addServlet(
-				new ServletHolder(new PostServlet(helloWorld, baseUrl + "/post/1", bytes, contentType)),
-				"/post");
-		handler.addServlet(new ServletHolder(new StatusCodeServlet(204)), "/status/nocontent");
-		handler.addServlet(new ServletHolder(new StatusCodeServlet(304)), "/status/notmodified");
-		handler.addServlet(new ServletHolder(new ErrorServlet(404)), "/status/notfound");
-		handler.addServlet(new ServletHolder(new ErrorServlet(500)), "/status/server");
-		handler.addServlet(new ServletHolder(new UriServlet()), "/uri/*");
-		handler.addServlet(new ServletHolder(new MultipartServlet()), "/multipart");
-		jettyServer.setHandler(handler);
-		jettyServer.start();
-	}
-
-	@Before
-	public void createTemplate() {
-		template = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
-	}
-
-	@AfterClass
-	public static void stopJettyServer() throws Exception {
-		if (jettyServer != null) {
-			jettyServer.stop();
-		}
-	}
 
 	@Test
 	public void getString() {
@@ -122,7 +67,7 @@ public class RestTemplateIntegrationTests {
 		ResponseEntity<String> entity = template.getForEntity(baseUrl + "/{method}", String.class, "get");
 		assertEquals("Invalid content", helloWorld, entity.getBody());
 		assertFalse("No headers", entity.getHeaders().isEmpty());
-		assertEquals("Invalid content-type", contentType, entity.getHeaders().getContentType());
+		assertEquals("Invalid content-type", textContentType, entity.getHeaders().getContentType());
 		assertEquals("Invalid status code", HttpStatus.OK, entity.getStatusCode());
 	}
 
@@ -237,11 +182,20 @@ public class RestTemplateIntegrationTests {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
+	public void form() throws UnsupportedEncodingException {
+		MultiValueMap<String, String> form = new LinkedMultiValueMap<String, String>();
+		form.add("name 1", "value 1");
+		form.add("name 2", "value 2+1");
+		form.add("name 2", "value 2+2");
+
+		template.postForLocation(baseUrl + "/form", form);
+	}
+
+	@Test
 	public void exchangeGet() throws Exception {
 		HttpHeaders requestHeaders = new HttpHeaders();
 		requestHeaders.set("MyHeader", "MyValue");
-		HttpEntity<?> requestEntity = new HttpEntity(requestHeaders);
+		HttpEntity<String> requestEntity = new HttpEntity<String>(requestHeaders);
 		ResponseEntity<String> response =
 				template.exchange(baseUrl + "/{method}", HttpMethod.GET, requestEntity, String.class, "get");
 		assertEquals("Invalid content", helloWorld, response.getBody());
@@ -258,141 +212,145 @@ public class RestTemplateIntegrationTests {
 		assertFalse(result.hasBody());
 	}
 
-	/** Servlet that sets the given status code. */
-	@SuppressWarnings("serial")
-	private static class StatusCodeServlet extends GenericServlet {
+	@Test
+	public void jsonPostForObject() throws URISyntaxException {
+		HttpHeaders entityHeaders = new HttpHeaders();
+		entityHeaders.setContentType(new MediaType("application", "json", Charset.forName("UTF-8")));
+		MySampleBean bean = new MySampleBean();
+		bean.setWith1("with");
+		bean.setWith2("with");
+		bean.setWithout("without");
+		HttpEntity<MySampleBean> entity = new HttpEntity<MySampleBean>(bean, entityHeaders);
+		String s = template.postForObject(baseUrl + "/jsonpost", entity, String.class);
+		assertTrue(s.contains("\"with1\":\"with\""));
+		assertTrue(s.contains("\"with2\":\"with\""));
+		assertTrue(s.contains("\"without\":\"without\""));
+	}
 
-		private final int sc;
+	@Test
+	public void jsonPostForObjectWithJacksonView() throws URISyntaxException {
+		HttpHeaders entityHeaders = new HttpHeaders();
+		entityHeaders.setContentType(new MediaType("application", "json", Charset.forName("UTF-8")));
+		MySampleBean bean = new MySampleBean("with", "with", "without");
+		MappingJacksonValue jacksonValue = new MappingJacksonValue(bean);
+		jacksonValue.setSerializationView(MyJacksonView1.class);
+		HttpEntity<MappingJacksonValue> entity = new HttpEntity<MappingJacksonValue>(jacksonValue, entityHeaders);
+		String s = template.postForObject(baseUrl + "/jsonpost", entity, String.class);
+		assertTrue(s.contains("\"with1\":\"with\""));
+		assertFalse(s.contains("\"with2\":\"with\""));
+		assertFalse(s.contains("\"without\":\"without\""));
+	}
 
-		private StatusCodeServlet(int sc) {
-			this.sc = sc;
+	// SPR-12123
+
+	@Test
+	public void serverPort() {
+		String s = template.getForObject("http://localhost:{port}/get", String.class, port);
+		assertEquals("Invalid content", helloWorld, s);
+	}
+
+	@Test  // SPR-13154
+	public void jsonPostForObjectWithJacksonTypeInfoList() throws URISyntaxException {
+		List<ParentClass> list = new ArrayList<>();
+		list.add(new Foo("foo"));
+		list.add(new Bar("bar"));
+		ParameterizedTypeReference<?> typeReference = new ParameterizedTypeReference<List<ParentClass>>() {};
+		RequestEntity<List<ParentClass>> entity = RequestEntity
+				.post(new URI(baseUrl + "/jsonpost"))
+				.contentType(new MediaType("application", "json", Charset.forName("UTF-8")))
+				.body(list, typeReference.getType());
+		String content = template.exchange(entity, String.class).getBody();
+		assertTrue(content.contains("\"type\":\"foo\""));
+		assertTrue(content.contains("\"type\":\"bar\""));
+	}
+
+	public interface MyJacksonView1 {};
+	public interface MyJacksonView2 {};
+
+	public static class MySampleBean {
+
+		@JsonView(MyJacksonView1.class)
+		private String with1;
+
+		@JsonView(MyJacksonView2.class)
+		private String with2;
+
+		private String without;
+
+		private MySampleBean() {
 		}
 
-		@Override
-		public void service(ServletRequest request, ServletResponse response) throws ServletException, IOException {
-			((HttpServletResponse) response).setStatus(sc);
+		private MySampleBean(String with1, String with2, String without) {
+			this.with1 = with1;
+			this.with2 = with2;
+			this.without = without;
+		}
+
+		public String getWith1() {
+			return with1;
+		}
+
+		public void setWith1(String with1) {
+			this.with1 = with1;
+		}
+
+		public String getWith2() {
+			return with2;
+		}
+
+		public void setWith2(String with2) {
+			this.with2 = with2;
+		}
+
+		public String getWithout() {
+			return without;
+		}
+
+		public void setWithout(String without) {
+			this.without = without;
 		}
 	}
 
-	/** Servlet that returns an error message for a given status code. */
-	@SuppressWarnings("serial")
-	private static class ErrorServlet extends GenericServlet {
+	@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+	public static class ParentClass {
 
-		private final int sc;
+		private String parentProperty;
 
-		private ErrorServlet(int sc) {
-			this.sc = sc;
+		public ParentClass() {
 		}
 
-		@Override
-		public void service(ServletRequest request, ServletResponse response) throws ServletException, IOException {
-			((HttpServletResponse) response).sendError(sc);
-		}
-	}
-
-	@SuppressWarnings("serial")
-	private static class GetServlet extends HttpServlet {
-
-		private final byte[] buf;
-
-		private final MediaType contentType;
-
-		private GetServlet(byte[] buf, MediaType contentType) {
-			this.buf = buf;
-			this.contentType = contentType;
+		public ParentClass(String parentProperty) {
+			this.parentProperty = parentProperty;
 		}
 
-		@Override
-		protected void doGet(HttpServletRequest request, HttpServletResponse response)
-				throws ServletException, IOException {
-			if (contentType != null) {
-				response.setContentType(contentType.toString());
-			}
-			response.setContentLength(buf.length);
-			FileCopyUtils.copy(buf, response.getOutputStream());
+		public String getParentProperty() {
+			return parentProperty;
+		}
+
+		public void setParentProperty(String parentProperty) {
+			this.parentProperty = parentProperty;
 		}
 	}
 
-	@SuppressWarnings("serial")
-	private static class PostServlet extends HttpServlet {
+	@JsonTypeName("foo")
+	public static class Foo extends ParentClass {
 
-		private final String s;
-
-		private final String location;
-
-		private final byte[] buf;
-
-		private final MediaType contentType;
-
-		private PostServlet(String s, String location, byte[] buf, MediaType contentType) {
-			this.s = s;
-			this.location = location;
-			this.buf = buf;
-			this.contentType = contentType;
+		public Foo() {
 		}
 
-		@Override
-		protected void doPost(HttpServletRequest request, HttpServletResponse response)
-				throws ServletException, IOException {
-			assertTrue("Invalid request content-length", request.getContentLength() > 0);
-			assertNotNull("No content-type", request.getContentType());
-			String body = FileCopyUtils.copyToString(request.getReader());
-			assertEquals("Invalid request body", s, body);
-			response.setStatus(HttpServletResponse.SC_CREATED);
-			response.setHeader("Location", location);
-			response.setContentLength(buf.length);
-			response.setContentType(contentType.toString());
-			FileCopyUtils.copy(buf, response.getOutputStream());
+		public Foo(String parentProperty) {
+			super(parentProperty);
 		}
 	}
 
-	@SuppressWarnings("serial")
-	private static class UriServlet extends HttpServlet {
+	@JsonTypeName("bar")
+	public static class Bar extends ParentClass {
 
-		@Override
-		protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-			resp.setContentType("text/plain");
-			resp.setCharacterEncoding("UTF-8");
-			resp.getWriter().write(req.getRequestURI());
+		public Bar() {
 		}
-	}
 
-	@SuppressWarnings("serial")
-	private static class MultipartServlet extends HttpServlet {
-
-		@Override
-		protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-			assertTrue(ServletFileUpload.isMultipartContent(req));
-			FileItemFactory factory = new DiskFileItemFactory();
-			ServletFileUpload upload = new ServletFileUpload(factory);
-			try {
-				List items = upload.parseRequest(req);
-				assertEquals(4, items.size());
-				FileItem item = (FileItem) items.get(0);
-				assertTrue(item.isFormField());
-				assertEquals("name 1", item.getFieldName());
-				assertEquals("value 1", item.getString());
-
-				item = (FileItem) items.get(1);
-				assertTrue(item.isFormField());
-				assertEquals("name 2", item.getFieldName());
-				assertEquals("value 2+1", item.getString());
-
-				item = (FileItem) items.get(2);
-				assertTrue(item.isFormField());
-				assertEquals("name 2", item.getFieldName());
-				assertEquals("value 2+2", item.getString());
-
-				item = (FileItem) items.get(3);
-				assertFalse(item.isFormField());
-				assertEquals("logo", item.getFieldName());
-				assertEquals("logo.jpg", item.getName());
-				assertEquals("image/jpeg", item.getContentType());
-			}
-			catch (FileUploadException ex) {
-				throw new ServletException(ex);
-			}
-
+		public Bar(String parentProperty) {
+			super(parentProperty);
 		}
 	}
 

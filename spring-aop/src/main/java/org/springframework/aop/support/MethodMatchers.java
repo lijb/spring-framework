@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,11 @@ import org.springframework.aop.MethodMatcher;
 import org.springframework.util.Assert;
 
 /**
- * Static utility methods for composing
- * {@link org.springframework.aop.MethodMatcher MethodMatchers}.
+ * Static utility methods for composing {@link MethodMatcher MethodMatchers}.
  *
- * <p>A MethodMatcher may be evaluated statically (based on method
- * and target class) or need further evaluation dynamically
- * (based on arguments at the time of method invocation).
+ * <p>A MethodMatcher may be evaluated statically (based on method and target
+ * class) or need further evaluation dynamically (based on arguments at the
+ * time of method invocation).
  *
  * @author Rod Johnson
  * @author Rob Harrop
@@ -88,7 +87,7 @@ public abstract class MethodMatchers {
 	 * asking is the subject on one or more introductions; {@code false} otherwise
 	 * @return whether or not this method matches statically
 	 */
-	public static boolean matches(MethodMatcher mm, Method method, Class targetClass, boolean hasIntroductions) {
+	public static boolean matches(MethodMatcher mm, Method method, Class<?> targetClass, boolean hasIntroductions) {
 		Assert.notNull(mm, "MethodMatcher must not be null");
 		return ((mm instanceof IntroductionAwareMethodMatcher &&
 				((IntroductionAwareMethodMatcher) mm).matches(method, targetClass, hasIntroductions)) ||
@@ -102,8 +101,9 @@ public abstract class MethodMatchers {
 	@SuppressWarnings("serial")
 	private static class UnionMethodMatcher implements IntroductionAwareMethodMatcher, Serializable {
 
-		private MethodMatcher mm1;
-		private MethodMatcher mm2;
+		private final MethodMatcher mm1;
+
+		private final MethodMatcher mm2;
 
 		public UnionMethodMatcher(MethodMatcher mm1, MethodMatcher mm2) {
 			Assert.notNull(mm1, "First MethodMatcher must not be null");
@@ -113,22 +113,22 @@ public abstract class MethodMatchers {
 		}
 
 		@Override
-		public boolean matches(Method method, Class targetClass, boolean hasIntroductions) {
+		public boolean matches(Method method, Class<?> targetClass, boolean hasIntroductions) {
 			return (matchesClass1(targetClass) && MethodMatchers.matches(this.mm1, method, targetClass, hasIntroductions)) ||
 					(matchesClass2(targetClass) && MethodMatchers.matches(this.mm2, method, targetClass, hasIntroductions));
 		}
 
 		@Override
-		public boolean matches(Method method, Class targetClass) {
+		public boolean matches(Method method, Class<?> targetClass) {
 			return (matchesClass1(targetClass) && this.mm1.matches(method, targetClass)) ||
 					(matchesClass2(targetClass) && this.mm2.matches(method, targetClass));
 		}
 
-		protected boolean matchesClass1(Class targetClass) {
+		protected boolean matchesClass1(Class<?> targetClass) {
 			return true;
 		}
 
-		protected boolean matchesClass2(Class targetClass) {
+		protected boolean matchesClass2(Class<?> targetClass) {
 			return true;
 		}
 
@@ -138,7 +138,7 @@ public abstract class MethodMatchers {
 		}
 
 		@Override
-		public boolean matches(Method method, Class targetClass, Object[] args) {
+		public boolean matches(Method method, Class<?> targetClass, Object... args) {
 			return this.mm1.matches(method, targetClass, args) || this.mm2.matches(method, targetClass, args);
 		}
 
@@ -172,6 +172,7 @@ public abstract class MethodMatchers {
 	private static class ClassFilterAwareUnionMethodMatcher extends UnionMethodMatcher {
 
 		private final ClassFilter cf1;
+
 		private final ClassFilter cf2;
 
 		public ClassFilterAwareUnionMethodMatcher(MethodMatcher mm1, ClassFilter cf1, MethodMatcher mm2, ClassFilter cf2) {
@@ -181,12 +182,12 @@ public abstract class MethodMatchers {
 		}
 
 		@Override
-		protected boolean matchesClass1(Class targetClass) {
+		protected boolean matchesClass1(Class<?> targetClass) {
 			return this.cf1.matches(targetClass);
 		}
 
 		@Override
-		protected boolean matchesClass2(Class targetClass) {
+		protected boolean matchesClass2(Class<?> targetClass) {
 			return this.cf2.matches(targetClass);
 		}
 
@@ -195,11 +196,17 @@ public abstract class MethodMatchers {
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof ClassFilterAwareUnionMethodMatcher)) {
+			if (!super.equals(other)) {
 				return false;
 			}
-			ClassFilterAwareUnionMethodMatcher that = (ClassFilterAwareUnionMethodMatcher) other;
-			return (this.cf1.equals(that.cf1) && this.cf2.equals(that.cf2) && super.equals(other));
+			ClassFilter otherCf1 = ClassFilter.TRUE;
+			ClassFilter otherCf2 = ClassFilter.TRUE;
+			if (other instanceof ClassFilterAwareUnionMethodMatcher) {
+				ClassFilterAwareUnionMethodMatcher cfa = (ClassFilterAwareUnionMethodMatcher) other;
+				otherCf1 = cfa.cf1;
+				otherCf2 = cfa.cf2;
+			}
+			return (this.cf1.equals(otherCf1) && this.cf2.equals(otherCf2));
 		}
 	}
 
@@ -210,8 +217,9 @@ public abstract class MethodMatchers {
 	@SuppressWarnings("serial")
 	private static class IntersectionMethodMatcher implements IntroductionAwareMethodMatcher, Serializable {
 
-		private MethodMatcher mm1;
-		private MethodMatcher mm2;
+		private final MethodMatcher mm1;
+
+		private final MethodMatcher mm2;
 
 		public IntersectionMethodMatcher(MethodMatcher mm1, MethodMatcher mm2) {
 			Assert.notNull(mm1, "First MethodMatcher must not be null");
@@ -221,13 +229,13 @@ public abstract class MethodMatchers {
 		}
 
 		@Override
-		public boolean matches(Method method, Class targetClass, boolean hasIntroductions) {
+		public boolean matches(Method method, Class<?> targetClass, boolean hasIntroductions) {
 			return MethodMatchers.matches(this.mm1, method, targetClass, hasIntroductions) &&
 					MethodMatchers.matches(this.mm2, method, targetClass, hasIntroductions);
 		}
 
 		@Override
-		public boolean matches(Method method, Class targetClass) {
+		public boolean matches(Method method, Class<?> targetClass) {
 			return this.mm1.matches(method, targetClass) && this.mm2.matches(method, targetClass);
 		}
 
@@ -237,7 +245,7 @@ public abstract class MethodMatchers {
 		}
 
 		@Override
-		public boolean matches(Method method, Class targetClass, Object[] args) {
+		public boolean matches(Method method, Class<?> targetClass, Object... args) {
 			// Because a dynamic intersection may be composed of a static and dynamic part,
 			// we must avoid calling the 3-arg matches method on a dynamic matcher, as
 			// it will probably be an unsupported operation.

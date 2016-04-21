@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import javax.jms.JMSException;
 import javax.jms.Message;
 import javax.jms.MessageConsumer;
 import javax.jms.Session;
-import javax.jms.Topic;
 
 import org.springframework.jms.connection.ConnectionFactoryUtils;
 import org.springframework.jms.connection.JmsResourceHolder;
@@ -42,25 +41,24 @@ import org.springframework.transaction.support.TransactionSynchronizationUtils;
  *
  * <p>This listener container variant is built for repeated polling attempts,
  * each invoking the {@link #receiveAndExecute} method. The MessageConsumer used
- * may be reobtained fo reach attempt or cached inbetween attempts; this is up
+ * may be reobtained fo reach attempt or cached in between attempts; this is up
  * to the concrete implementation. The receive timeout for each attempt can be
  * configured through the {@link #setReceiveTimeout "receiveTimeout"} property.
  *
  * <p>The underlying mechanism is based on standard JMS MessageConsumer handling,
- * which is perfectly compatible with both native JMS and JMS in a J2EE environment.
- * Neither the JMS {@code MessageConsumer.setMessageListener} facility
- * nor the JMS ServerSessionPool facility is required. A further advantage
- * of this approach is full control over the listening process, allowing for
- * custom scaling and throttling and of concurrent message processing
- * (which is up to concrete subclasses).
+ * which is perfectly compatible with both native JMS and JMS in a Java EE environment.
+ * Neither the JMS {@code MessageConsumer.setMessageListener} facility  nor the JMS
+ * ServerSessionPool facility is required. A further advantage of this approach is
+ * full control over the listening process, allowing for custom scaling and throttling
+ * and of concurrent message processing (which is up to concrete subclasses).
  *
  * <p>Message reception and listener execution can automatically be wrapped
  * in transactions through passing a Spring
  * {@link org.springframework.transaction.PlatformTransactionManager} into the
  * {@link #setTransactionManager "transactionManager"} property. This will usually
  * be a {@link org.springframework.transaction.jta.JtaTransactionManager} in a
- * J2EE enviroment, in combination with a JTA-aware JMS ConnectionFactory obtained
- * from JNDI (check your J2EE server's documentation).
+ * Java EE enviroment, in combination with a JTA-aware JMS ConnectionFactory
+ * obtained from JNDI (check your application server's documentation).
  *
  * <p>This base class does not assume any specific mechanism for asynchronous
  * execution of polling invokers. Check out {@link DefaultMessageListenerContainer}
@@ -87,8 +85,6 @@ public abstract class AbstractPollingMessageListenerContainer extends AbstractMe
 
 	private boolean sessionTransactedCalled = false;
 
-	private boolean pubSubNoLocal = false;
-
 	private PlatformTransactionManager transactionManager;
 
 	private DefaultTransactionDefinition transactionDefinition = new DefaultTransactionDefinition();
@@ -105,22 +101,6 @@ public abstract class AbstractPollingMessageListenerContainer extends AbstractMe
 	}
 
 	/**
-	 * Set whether to inhibit the delivery of messages published by its own connection.
-	 * Default is "false".
-	 * @see javax.jms.TopicSession#createSubscriber(javax.jms.Topic, String, boolean)
-	 */
-	public void setPubSubNoLocal(boolean pubSubNoLocal) {
-		this.pubSubNoLocal = pubSubNoLocal;
-	}
-
-	/**
-	 * Return whether to inhibit the delivery of messages published by its own connection.
-	 */
-	protected boolean isPubSubNoLocal() {
-		return this.pubSubNoLocal;
-	}
-
-	/**
 	 * Specify the Spring {@link org.springframework.transaction.PlatformTransactionManager}
 	 * to use for transactional wrapping of message reception plus listener execution.
 	 * <p>Default is none, not performing any transactional wrapping.
@@ -132,11 +112,13 @@ public abstract class AbstractPollingMessageListenerContainer extends AbstractMe
 	 * Simply switch the {@link #setSessionTransacted "sessionTransacted"} flag
 	 * to "true" in order to use a locally transacted JMS Session for the entire
 	 * receive processing, including any Session operations performed by a
-	 * {@link SessionAwareMessageListener} (e.g. sending a response message).
-	 * Alternatively, a {@link org.springframework.jms.connection.JmsTransactionManager}
-	 * may be used for fully synchronized Spring transactions based on local JMS
-	 * transactions. Check {@link AbstractMessageListenerContainer}'s javadoc for
+	 * {@link SessionAwareMessageListener} (e.g. sending a response message). This
+	 * allows for fully synchronized Spring transactions based on local JMS
+	 * transactions, similar to what
+	 * {@link org.springframework.jms.connection.JmsTransactionManager} provides. Check
+	 * {@link AbstractMessageListenerContainer}'s javadoc for
 	 * a discussion of transaction choices and message redelivery scenarios.
+	 * @see #setSessionTransacted(boolean)
 	 * @see org.springframework.transaction.jta.JtaTransactionManager
 	 * @see org.springframework.jms.connection.JmsTransactionManager
 	 */
@@ -184,6 +166,14 @@ public abstract class AbstractPollingMessageListenerContainer extends AbstractMe
 	 */
 	public void setReceiveTimeout(long receiveTimeout) {
 		this.receiveTimeout = receiveTimeout;
+	}
+
+	/**
+	 * Return the receive timeout (ms) configured for this listener container.
+	 * @since 4.2
+	 */
+	protected long getReceiveTimeout() {
+		return this.receiveTimeout;
 	}
 
 
@@ -450,11 +440,6 @@ public abstract class AbstractPollingMessageListenerContainer extends AbstractMe
 	protected void noMessageReceived(Object invoker, Session session) {
 	}
 
-
-	//-------------------------------------------------------------------------
-	// JMS 1.1 factory methods, potentially overridden for JMS 1.0.2
-	//-------------------------------------------------------------------------
-
 	/**
 	 * Fetch an appropriate Connection from the given JmsResourceHolder.
 	 * <p>This implementation accepts any JMS 1.1 Connection.
@@ -475,32 +460,6 @@ public abstract class AbstractPollingMessageListenerContainer extends AbstractMe
 	 */
 	protected Session getSession(JmsResourceHolder holder) {
 		return holder.getSession();
-	}
-
-	/**
-	 * Create a JMS MessageConsumer for the given Session and Destination.
-	 * <p>This implementation uses JMS 1.1 API.
-	 * @param session the JMS Session to create a MessageConsumer for
-	 * @param destination the JMS Destination to create a MessageConsumer for
-	 * @return the new JMS MessageConsumer
-	 * @throws javax.jms.JMSException if thrown by JMS API methods
-	 */
-	protected MessageConsumer createConsumer(Session session, Destination destination) throws JMSException {
-		// Only pass in the NoLocal flag in case of a Topic:
-		// Some JMS providers, such as WebSphere MQ 6.0, throw IllegalStateException
-		// in case of the NoLocal flag being specified for a Queue.
-		if (isPubSubDomain()) {
-			if (isSubscriptionDurable() && destination instanceof Topic) {
-				return session.createDurableSubscriber(
-						(Topic) destination, getDurableSubscriptionName(), getMessageSelector(), isPubSubNoLocal());
-			}
-			else {
-				return session.createConsumer(destination, getMessageSelector(), isPubSubNoLocal());
-			}
-		}
-		else {
-			return session.createConsumer(destination, getMessageSelector());
-		}
 	}
 
 

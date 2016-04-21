@@ -34,7 +34,7 @@ import org.springframework.aop.support.DelegatingIntroductionInterceptor;
  */
 public class DeclareParentsAdvisor implements IntroductionAdvisor {
 
-	private final Class introducedInterface;
+	private final Class<?> introducedInterface;
 
 	private final ClassFilter typePatternClassFilter;
 
@@ -47,7 +47,7 @@ public class DeclareParentsAdvisor implements IntroductionAdvisor {
 	 * @param typePattern type pattern the introduction is restricted to
 	 * @param defaultImpl the default implementation class
 	 */
-	public DeclareParentsAdvisor(Class interfaceType, String typePattern, Class defaultImpl) {
+	public DeclareParentsAdvisor(Class<?> interfaceType, String typePattern, Class<?> defaultImpl) {
 		this(interfaceType, typePattern, defaultImpl,
 			 new DelegatePerTargetObjectIntroductionInterceptor(defaultImpl, interfaceType));
 	}
@@ -58,27 +58,27 @@ public class DeclareParentsAdvisor implements IntroductionAdvisor {
 	 * @param typePattern type pattern the introduction is restricted to
 	 * @param delegateRef the delegate implementation object
 	 */
-	public DeclareParentsAdvisor(Class interfaceType, String typePattern, Object delegateRef) {
+	public DeclareParentsAdvisor(Class<?> interfaceType, String typePattern, Object delegateRef) {
 		this(interfaceType, typePattern, delegateRef.getClass(),
 			 new DelegatingIntroductionInterceptor(delegateRef));
 	}
 
 	/**
 	 * Private constructor to share common code between impl-based delegate and reference-based delegate
-	 * (cannot use method such as init() to share common code, due the the use of final fields)
+	 * (cannot use method such as init() to share common code, due the use of final fields)
 	 * @param interfaceType static field defining the introduction
 	 * @param typePattern type pattern the introduction is restricted to
 	 * @param implementationClass implementation class
 	 * @param advice delegation advice
 	 */
-	private DeclareParentsAdvisor(Class interfaceType, String typePattern, Class implementationClass, Advice advice) {
+	private DeclareParentsAdvisor(Class<?> interfaceType, String typePattern, Class<?> implementationClass, Advice advice) {
 		this.introducedInterface = interfaceType;
 		ClassFilter typePatternFilter = new TypePatternClassFilter(typePattern);
 
 		// Excludes methods implemented.
 		ClassFilter exclusion = new ClassFilter() {
 			@Override
-			public boolean matches(Class clazz) {
+			public boolean matches(Class<?> clazz) {
 				return !(introducedInterface.isAssignableFrom(clazz));
 			}
 		};
@@ -109,8 +109,8 @@ public class DeclareParentsAdvisor implements IntroductionAdvisor {
 	}
 
 	@Override
-	public Class[] getInterfaces() {
-		return new Class[] {this.introducedInterface};
+	public Class<?>[] getInterfaces() {
+		return new Class<?>[] {this.introducedInterface};
 	}
 
 }

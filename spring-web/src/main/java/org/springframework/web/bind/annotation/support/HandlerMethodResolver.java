@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,9 @@ import org.springframework.web.bind.annotation.SessionAttributes;
  * @see org.springframework.web.bind.annotation.InitBinder
  * @see org.springframework.web.bind.annotation.ModelAttribute
  * @see org.springframework.web.bind.annotation.SessionAttributes
+ * @deprecated as of 4.3, in favor of the {@code HandlerMethod}-based MVC infrastructure
  */
+@Deprecated
 public class HandlerMethodResolver {
 
 	private final Set<Method> handlerMethods = new LinkedHashSet<Method>();
@@ -63,7 +65,7 @@ public class HandlerMethodResolver {
 
 	private final Set<String> sessionAttributeNames = new HashSet<String>();
 
-	private final Set<Class> sessionAttributeTypes = new HashSet<Class>();
+	private final Set<Class<?>> sessionAttributeTypes = new HashSet<Class<?>>();
 
 	private final Set<String> actualSessionAttributeNames =
 			Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>(4));
@@ -107,7 +109,7 @@ public class HandlerMethodResolver {
 		SessionAttributes sessionAttributes = AnnotationUtils.findAnnotation(handlerType, SessionAttributes.class);
 		this.sessionAttributesFound = (sessionAttributes != null);
 		if (this.sessionAttributesFound) {
-			this.sessionAttributeNames.addAll(Arrays.asList(sessionAttributes.value()));
+			this.sessionAttributeNames.addAll(Arrays.asList(sessionAttributes.names()));
 			this.sessionAttributeTypes.addAll(Arrays.asList(sessionAttributes.types()));
 		}
 	}
@@ -153,7 +155,7 @@ public class HandlerMethodResolver {
 		return this.sessionAttributesFound;
 	}
 
-	public boolean isSessionAttribute(String attrName, Class attrType) {
+	public boolean isSessionAttribute(String attrName, Class<?> attrType) {
 		if (this.sessionAttributeNames.contains(attrName) || this.sessionAttributeTypes.contains(attrType)) {
 			this.actualSessionAttributeNames.add(attrName);
 			return true;

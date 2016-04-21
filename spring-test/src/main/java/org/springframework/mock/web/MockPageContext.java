@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,8 +35,6 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import javax.servlet.jsp.JspWriter;
 import javax.servlet.jsp.PageContext;
-import javax.servlet.jsp.el.ExpressionEvaluator;
-import javax.servlet.jsp.el.VariableResolver;
 
 import org.springframework.util.Assert;
 
@@ -47,13 +45,12 @@ import org.springframework.util.Assert;
  * applications when testing custom JSP tags.
  *
  * <p>Note: Expects initialization via the constructor rather than via the
- * {@code PageContext.initialize} method. Does not support writing to
- * a JspWriter, request dispatching, and {@code handlePageException} calls.
+ * {@code PageContext.initialize} method. Does not support writing to a
+ * JspWriter, request dispatching, or {@code handlePageException} calls.
  *
  * @author Juergen Hoeller
  * @since 1.0.2
  */
-@SuppressWarnings("deprecation")
 public class MockPageContext extends PageContext {
 
 	private final ServletContext servletContext;
@@ -289,7 +286,8 @@ public class MockPageContext extends PageContext {
 	}
 
 	@Override
-	public ExpressionEvaluator getExpressionEvaluator() {
+	@Deprecated
+	public javax.servlet.jsp.el.ExpressionEvaluator getExpressionEvaluator() {
 		return new MockExpressionEvaluator(this);
 	}
 
@@ -299,7 +297,8 @@ public class MockPageContext extends PageContext {
 	}
 
 	@Override
-	public VariableResolver getVariableResolver() {
+	@Deprecated
+	public javax.servlet.jsp.el.VariableResolver getVariableResolver() {
 		return null;
 	}
 

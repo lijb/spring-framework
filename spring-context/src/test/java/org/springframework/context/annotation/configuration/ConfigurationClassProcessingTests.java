@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,23 @@
 package org.springframework.context.annotation.configuration;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import javax.inject.Provider;
 
 import org.junit.Test;
-import org.springframework.tests.sample.beans.ITestBean;
-import org.springframework.tests.sample.beans.TestBean;
 
 import org.springframework.beans.factory.BeanClassLoaderAware;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.InjectionPoint;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.QualifierAnnotationAutowireCandidateResolver;
 import org.springframework.beans.factory.annotation.Required;
 import org.springframework.beans.factory.annotation.RequiredAnnotationBeanPostProcessor;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +41,7 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.DependencyDescriptor;
 import org.springframework.beans.factory.config.ListFactoryBean;
 import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
@@ -49,6 +56,8 @@ import org.springframework.context.annotation.ConfigurationClassPostProcessor;
 import org.springframework.context.annotation.Scope;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.tests.sample.beans.ITestBean;
+import org.springframework.tests.sample.beans.TestBean;
 
 import static org.junit.Assert.*;
 
@@ -68,7 +77,7 @@ public class ConfigurationClassProcessingTests {
 	 * When complete, the factory is ready to service requests for any {@link Bean} methods
 	 * declared by <var>configClasses</var>.
 	 */
-	private ListableBeanFactory initBeanFactory(Class<?>... configClasses) {
+	private DefaultListableBeanFactory initBeanFactory(Class<?>... configClasses) {
 		DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
 		for (Class<?> configClass : configClasses) {
 			String configBeanName = configClass.getName();
@@ -80,6 +89,7 @@ public class ConfigurationClassProcessingTests {
 		RequiredAnnotationBeanPostProcessor rapp = new RequiredAnnotationBeanPostProcessor();
 		rapp.setBeanFactory(factory);
 		factory.addBeanPostProcessor(rapp);
+		factory.freezeConfiguration();
 		return factory;
 	}
 
@@ -107,14 +117,35 @@ public class ConfigurationClassProcessingTests {
 		BeanFactory factory = initBeanFactory(ConfigWithBeanWithAliases.class);
 		assertSame(factory.getBean("name1"), ConfigWithBeanWithAliases.testBean);
 		String[] aliases = factory.getAliases("name1");
-		for(String alias : aliases)
+		for (String alias : aliases)
 			assertSame(factory.getBean(alias), ConfigWithBeanWithAliases.testBean);
 
 		// method name should not be registered
 		try {
 			factory.getBean("methodName");
 			fail("bean should not have been registered with 'methodName'");
-		} catch (NoSuchBeanDefinitionException ex) { /* expected */ }
+		}
+		catch (NoSuchBeanDefinitionException ex) {
+			// expected
+		}
+	}
+
+	@Test  // SPR-11830
+	public void configWithBeanWithProviderImplementation() {
+		GenericApplicationContext ac = new GenericApplicationContext();
+		AnnotationConfigUtils.registerAnnotationConfigProcessors(ac);
+		ac.registerBeanDefinition("config", new RootBeanDefinition(ConfigWithBeanWithProviderImplementation.class));
+		ac.refresh();
+		assertSame(ac.getBean("customName"), ConfigWithBeanWithProviderImplementation.testBean);
+	}
+
+	@Test  // SPR-11830
+	public void configWithSetWithProviderImplementation() {
+		GenericApplicationContext ac = new GenericApplicationContext();
+		AnnotationConfigUtils.registerAnnotationConfigProcessors(ac);
+		ac.registerBeanDefinition("config", new RootBeanDefinition(ConfigWithSetWithProviderImplementation.class));
+		ac.refresh();
+		assertSame(ac.getBean("customName"), ConfigWithSetWithProviderImplementation.set);
 	}
 
 	@Test(expected=BeanDefinitionParsingException.class)
@@ -123,7 +154,7 @@ public class ConfigurationClassProcessingTests {
 	}
 
 	@Test
-	public void simplestPossibleConfiguration() {
+	public void simplestPossibleConfig() {
 		BeanFactory factory = initBeanFactory(SimplestPossibleConfig.class);
 		String stringBean = factory.getBean("stringBean", String.class);
 		assertEquals(stringBean, "foo");
@@ -178,6 +209,20 @@ public class ConfigurationClassProcessingTests {
 	}
 
 	@Test
+	public void configurationWithAdaptivePrototypes() {
+		DefaultListableBeanFactory factory =
+				initBeanFactory(ConfigWithPrototypeBean.class, AdaptiveInjectionPoints.class);
+		AutowiredAnnotationBeanPostProcessor aabpp = new AutowiredAnnotationBeanPostProcessor();
+		aabpp.setBeanFactory(factory);
+		factory.setAutowireCandidateResolver(new QualifierAnnotationAutowireCandidateResolver());
+		factory.addBeanPostProcessor(aabpp);
+
+		AdaptiveInjectionPoints adaptive = factory.getBean(AdaptiveInjectionPoints.class);
+		assertEquals("adaptiveInjectionPoint1", adaptive.adaptiveInjectionPoint1.getName());
+		assertEquals("adaptiveInjectionPoint2", adaptive.adaptiveInjectionPoint2.getName());
+	}
+
+	@Test
 	public void configurationWithPostProcessor() {
 		AnnotationConfigApplicationContext factory = new AnnotationConfigApplicationContext();
 		factory.register(ConfigWithPostProcessor.class);
@@ -201,39 +246,12 @@ public class ConfigurationClassProcessingTests {
 
 	@Configuration
 	static class ConfigWithBeanWithCustomName {
+
 		static TestBean testBean = new TestBean();
+
 		@Bean(name="customName")
 		public TestBean methodName() {
 			return testBean;
-		}
-	}
-
-
-	@Configuration
-	static class ConfigWithFinalBean {
-		public final @Bean TestBean testBean() {
-			return new TestBean();
-		}
-	}
-
-
-	@Configuration
-	static class SimplestPossibleConfig {
-		public @Bean String stringBean() {
-			return "foo";
-		}
-	}
-
-
-	@Configuration
-	static class ConfigWithNonSpecificReturnTypes {
-		public @Bean Object stringBean() {
-			return "foo";
-		}
-		public @Bean FactoryBean<?> factoryBean() {
-			ListFactoryBean fb = new ListFactoryBean();
-			fb.setSourceList(Arrays.asList("element1", "element2"));
-			return fb;
 		}
 	}
 
@@ -246,6 +264,63 @@ public class ConfigurationClassProcessingTests {
 		@Bean(name={"name1", "alias1", "alias2", "alias3"})
 		public TestBean methodName() {
 			return testBean;
+		}
+	}
+
+
+	@Configuration
+	static class ConfigWithBeanWithProviderImplementation implements Provider<TestBean> {
+
+		static TestBean testBean = new TestBean();
+
+		@Bean(name="customName")
+		public TestBean get() {
+			return testBean;
+		}
+	}
+
+
+	@Configuration
+	static class ConfigWithSetWithProviderImplementation implements Provider<Set<String>> {
+
+		static Set<String> set = Collections.singleton("value");
+
+		@Bean(name="customName")
+		public Set<String> get() {
+			return set;
+		}
+	}
+
+
+	@Configuration
+	static class ConfigWithFinalBean {
+
+		public final @Bean TestBean testBean() {
+			return new TestBean();
+		}
+	}
+
+
+	@Configuration
+	static class SimplestPossibleConfig {
+
+		public @Bean String stringBean() {
+			return "foo";
+		}
+	}
+
+
+	@Configuration
+	static class ConfigWithNonSpecificReturnTypes {
+
+		public @Bean Object stringBean() {
+			return "foo";
+		}
+
+		public @Bean FactoryBean<?> factoryBean() {
+			ListFactoryBean fb = new ListFactoryBean();
+			fb.setSourceList(Arrays.asList("element1", "element2"));
+			return fb;
 		}
 	}
 
@@ -269,6 +344,26 @@ public class ConfigurationClassProcessingTests {
 		public TestBean baz() {
 			return new TestBean("baz");
 		}
+
+		@Bean @Scope("prototype")
+		public TestBean adaptive1(InjectionPoint ip) {
+			return new TestBean(ip.getMember().getName());
+		}
+
+		@Bean @Scope("prototype")
+		public TestBean adaptive2(DependencyDescriptor dd) {
+			return new TestBean(dd.getMember().getName());
+		}
+	}
+
+
+	static class AdaptiveInjectionPoints {
+
+		@Autowired @Qualifier("adaptive1")
+		public TestBean adaptiveInjectionPoint1;
+
+		@Autowired @Qualifier("adaptive2")
+		public TestBean adaptiveInjectionPoint2;
 	}
 
 

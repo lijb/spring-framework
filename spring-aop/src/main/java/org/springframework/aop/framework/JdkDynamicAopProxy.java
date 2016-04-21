@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.springframework.aop.AopInvocationException;
 import org.springframework.aop.RawTargetAccess;
 import org.springframework.aop.TargetSource;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.core.DecoratingProxy;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 
@@ -75,7 +76,7 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 	 */
 
 	/** We use a static Log to avoid serialization issues */
-	private static Log logger = LogFactory.getLog(JdkDynamicAopProxy.class);
+	private static final Log logger = LogFactory.getLog(JdkDynamicAopProxy.class);
 
 	/** Config used to configure this proxy */
 	private final AdvisedSupport advised;
@@ -116,7 +117,7 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 		if (logger.isDebugEnabled()) {
 			logger.debug("Creating JDK dynamic proxy: target source is " + this.advised.getTargetSource());
 		}
-		Class[] proxiedInterfaces = AopProxyUtils.completeProxiedInterfaces(this.advised);
+		Class<?>[] proxiedInterfaces = AopProxyUtils.completeProxiedInterfaces(this.advised, true);
 		findDefinedEqualsAndHashCodeMethods(proxiedInterfaces);
 		return Proxy.newProxyInstance(classLoader, proxiedInterfaces, this);
 	}
@@ -126,8 +127,8 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 	 * on the supplied set of interfaces.
 	 * @param proxiedInterfaces the interfaces to introspect
 	 */
-	private void findDefinedEqualsAndHashCodeMethods(Class[] proxiedInterfaces) {
-		for (Class proxiedInterface : proxiedInterfaces) {
+	private void findDefinedEqualsAndHashCodeMethods(Class<?>[] proxiedInterfaces) {
+		for (Class<?> proxiedInterface : proxiedInterfaces) {
 			Method[] methods = proxiedInterface.getDeclaredMethods();
 			for (Method method : methods) {
 				if (AopUtils.isEqualsMethod(method)) {
@@ -156,7 +157,7 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 		boolean setProxyContext = false;
 
 		TargetSource targetSource = this.advised.targetSource;
-		Class targetClass = null;
+		Class<?> targetClass = null;
 		Object target = null;
 
 		try {
@@ -164,11 +165,15 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 				// The target does not implement the equals(Object) method itself.
 				return equals(args[0]);
 			}
-			if (!this.hashCodeDefined && AopUtils.isHashCodeMethod(method)) {
+			else if (!this.hashCodeDefined && AopUtils.isHashCodeMethod(method)) {
 				// The target does not implement the hashCode() method itself.
 				return hashCode();
 			}
-			if (!this.advised.opaque && method.getDeclaringClass().isInterface() &&
+			else if (method.getDeclaringClass() == DecoratingProxy.class) {
+				// There is only getDecoratedClass() declared -> dispatch to proxy config.
+				return AopProxyUtils.ultimateTargetClass(this.advised);
+			}
+			else if (!this.advised.opaque && method.getDeclaringClass().isInterface() &&
 					method.getDeclaringClass().isAssignableFrom(Advised.class)) {
 				// Service invocations on ProxyConfig with the proxy config...
 				return AopUtils.invokeJoinpointUsingReflection(this.advised, method, args);
@@ -198,7 +203,8 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 				// We can skip creating a MethodInvocation: just invoke the target directly
 				// Note that the final invoker must be an InvokerInterceptor so we know it does
 				// nothing but a reflective operation on the target, and no hot swapping or fancy proxying.
-				retVal = AopUtils.invokeJoinpointUsingReflection(target, method, args);
+				Object[] argsToUse = AopProxyUtils.adaptArgumentsIfNecessary(method, args);
+				retVal = AopUtils.invokeJoinpointUsingReflection(target, method, argsToUse);
 			}
 			else {
 				// We need to create a method invocation...
@@ -215,8 +221,10 @@ final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializa
 				// is type-compatible. Note that we can't help if the target sets
 				// a reference to itself in another returned object.
 				retVal = proxy;
-			} else if (retVal == null && returnType != Void.TYPE && returnType.isPrimitive()) {
-				throw new AopInvocationException("Null return value from advice does not match primitive return type for: " + method);
+			}
+			else if (retVal == null && returnType != Void.TYPE && returnType.isPrimitive()) {
+				throw new AopInvocationException(
+						"Null return value from advice does not match primitive return type for: " + method);
 			}
 			return retVal;
 		}

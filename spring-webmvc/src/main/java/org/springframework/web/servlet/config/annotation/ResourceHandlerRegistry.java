@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,17 @@
 package org.springframework.web.servlet.config.annotation;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
 import javax.servlet.ServletContext;
 
+import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.util.Assert;
 import org.springframework.web.HttpRequestHandler;
+import org.springframework.web.accept.ContentNegotiationManager;
 import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.handler.AbstractHandlerMapping;
 import org.springframework.web.servlet.handler.SimpleUrlHandlerMapping;
@@ -52,17 +54,27 @@ public class ResourceHandlerRegistry {
 
 	private final ServletContext servletContext;
 
-	private final ApplicationContext applicationContext;
+	private final ApplicationContext appContext;
+
+	private final ContentNegotiationManager contentNegotiationManager;
 
 	private final List<ResourceHandlerRegistration> registrations = new ArrayList<ResourceHandlerRegistration>();
 
 	private int order = Integer.MAX_VALUE -1;
 
+
 	public ResourceHandlerRegistry(ApplicationContext applicationContext, ServletContext servletContext) {
-		Assert.notNull(applicationContext, "ApplicationContext is required");
-		this.applicationContext = applicationContext;
-		this.servletContext = servletContext;
+		this(applicationContext, servletContext, null);
 	}
+
+	public ResourceHandlerRegistry(ApplicationContext applicationContext, ServletContext servletContext,
+			ContentNegotiationManager contentNegotiationManager) {
+		Assert.notNull(applicationContext, "ApplicationContext is required");
+		this.appContext = applicationContext;
+		this.servletContext = servletContext;
+		this.contentNegotiationManager = contentNegotiationManager;
+	}
+
 
 	/**
 	 * Add a resource handler for serving static resources based on the specified URL path patterns.
@@ -70,9 +82,21 @@ public class ResourceHandlerRegistry {
 	 * @return A {@link ResourceHandlerRegistration} to use to further configure the registered resource handler.
 	 */
 	public ResourceHandlerRegistration addResourceHandler(String... pathPatterns) {
-		ResourceHandlerRegistration registration = new ResourceHandlerRegistration(applicationContext, pathPatterns);
-		registrations.add(registration);
+		ResourceHandlerRegistration registration = new ResourceHandlerRegistration(this.appContext, pathPatterns);
+		this.registrations.add(registration);
 		return registration;
+	}
+
+	/**
+	 * Whether a resource handler has already been registered for the given pathPattern.
+	 */
+	public boolean hasMappingForPattern(String pathPattern) {
+		for (ResourceHandlerRegistration registration : this.registrations) {
+			if (Arrays.asList(registration.getPathPatterns()).contains(pathPattern)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -93,12 +117,19 @@ public class ResourceHandlerRegistry {
 		}
 
 		Map<String, HttpRequestHandler> urlMap = new LinkedHashMap<String, HttpRequestHandler>();
-		for (ResourceHandlerRegistration registration : registrations) {
+		for (ResourceHandlerRegistration registration : this.registrations) {
 			for (String pathPattern : registration.getPathPatterns()) {
-				ResourceHttpRequestHandler requestHandler = registration.getRequestHandler();
-				requestHandler.setServletContext(servletContext);
-				requestHandler.setApplicationContext(applicationContext);
-				urlMap.put(pathPattern, requestHandler);
+				ResourceHttpRequestHandler handler = registration.getRequestHandler();
+				handler.setServletContext(this.servletContext);
+				handler.setApplicationContext(this.appContext);
+				handler.setContentNegotiationManager(this.contentNegotiationManager);
+				try {
+					handler.afterPropertiesSet();
+				}
+				catch (Exception e) {
+					throw new BeanInitializationException("Failed to init ResourceHttpRequestHandler", e);
+				}
+				urlMap.put(pathPattern, handler);
 			}
 		}
 

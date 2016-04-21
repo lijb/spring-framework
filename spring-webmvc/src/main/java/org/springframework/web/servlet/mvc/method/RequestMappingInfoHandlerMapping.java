@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,23 @@
 
 package org.springframework.web.servlet.mvc.method;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.MultiValueMap;
@@ -49,9 +55,27 @@ import org.springframework.web.util.WebUtils;
  *
  * @author Arjen Poutsma
  * @author Rossen Stoyanchev
- * @since 3.1.0
+ * @since 3.1
  */
 public abstract class RequestMappingInfoHandlerMapping extends AbstractHandlerMethodMapping<RequestMappingInfo> {
+
+	private static final Method HTTP_OPTIONS_HANDLE_METHOD;
+
+	static {
+		try {
+			HTTP_OPTIONS_HANDLE_METHOD = HttpOptionsHandler.class.getMethod("handle");
+		}
+		catch (NoSuchMethodException ex) {
+			// Should never happen
+			throw new IllegalStateException("No handler for HTTP OPTIONS", ex);
+		}
+	}
+
+
+	protected RequestMappingInfoHandlerMapping() {
+		setHandlerMethodMappingNamingStrategy(new RequestMappingInfoHandlerMethodMappingNamingStrategy());
+	}
+
 
 	/**
 	 * Get the URL path patterns associated with this {@link RequestMappingInfo}.
@@ -95,16 +119,28 @@ public abstract class RequestMappingInfoHandlerMapping extends AbstractHandlerMe
 	protected void handleMatch(RequestMappingInfo info, String lookupPath, HttpServletRequest request) {
 		super.handleMatch(info, lookupPath, request);
 
-		Set<String> patterns = info.getPatternsCondition().getPatterns();
-		String bestPattern = patterns.isEmpty() ? lookupPath : patterns.iterator().next();
-		request.setAttribute(BEST_MATCHING_PATTERN_ATTRIBUTE, bestPattern);
+		String bestPattern;
+		Map<String, String> uriVariables;
+		Map<String, String> decodedUriVariables;
 
-		Map<String, String> uriVariables = getPathMatcher().extractUriTemplateVariables(bestPattern, lookupPath);
-		Map<String, String> decodedUriVariables = getUrlPathHelper().decodePathVariables(request, uriVariables);
+		Set<String> patterns = info.getPatternsCondition().getPatterns();
+		if (patterns.isEmpty()) {
+			bestPattern = lookupPath;
+			uriVariables = Collections.emptyMap();
+			decodedUriVariables = Collections.emptyMap();
+		}
+		else {
+			bestPattern = patterns.iterator().next();
+			uriVariables = getPathMatcher().extractUriTemplateVariables(bestPattern, lookupPath);
+			decodedUriVariables = getUrlPathHelper().decodePathVariables(request, uriVariables);
+		}
+
+		request.setAttribute(BEST_MATCHING_PATTERN_ATTRIBUTE, bestPattern);
 		request.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, decodedUriVariables);
 
 		if (isMatrixVariableContentAvailable()) {
-			request.setAttribute(HandlerMapping.MATRIX_VARIABLES_ATTRIBUTE, extractMatrixVariables(request, uriVariables));
+			Map<String, MultiValueMap<String, String>> matrixVars = extractMatrixVariables(request, uriVariables);
+			request.setAttribute(HandlerMapping.MATRIX_VARIABLES_ATTRIBUTE, matrixVars);
 		}
 
 		if (!info.getProducesCondition().getProducibleMediaTypes().isEmpty()) {
@@ -180,13 +216,19 @@ public abstract class RequestMappingInfoHandlerMapping extends AbstractHandlerMe
 		if (patternMatches.isEmpty()) {
 			return null;
 		}
-		else if (patternAndMethodMatches.isEmpty() && !allowedMethods.isEmpty()) {
-			throw new HttpRequestMethodNotSupportedException(request.getMethod(), allowedMethods);
+		else if (patternAndMethodMatches.isEmpty()) {
+			if (HttpMethod.OPTIONS.matches(request.getMethod())) {
+				HttpOptionsHandler handler = new HttpOptionsHandler(allowedMethods);
+				return new HandlerMethod(handler, HTTP_OPTIONS_HANDLE_METHOD);
+			}
+			else if (!allowedMethods.isEmpty()) {
+				throw new HttpRequestMethodNotSupportedException(request.getMethod(), allowedMethods);
+			}
 		}
 
 		Set<MediaType> consumableMediaTypes;
 		Set<MediaType> producibleMediaTypes;
-		Set<String> paramConditions;
+		List<String[]> paramConditions;
 
 		if (patternAndMethodMatches.isEmpty()) {
 			consumableMediaTypes = getConsumableMediaTypes(request, patternMatches);
@@ -205,7 +247,7 @@ public abstract class RequestMappingInfoHandlerMapping extends AbstractHandlerMe
 				try {
 					contentType = MediaType.parseMediaType(request.getContentType());
 				}
-				catch (IllegalArgumentException ex) {
+				catch (InvalidMediaTypeException ex) {
 					throw new HttpMediaTypeNotSupportedException(ex.getMessage());
 				}
 			}
@@ -215,8 +257,7 @@ public abstract class RequestMappingInfoHandlerMapping extends AbstractHandlerMe
 			throw new HttpMediaTypeNotAcceptableException(new ArrayList<MediaType>(producibleMediaTypes));
 		}
 		else if (!CollectionUtils.isEmpty(paramConditions)) {
-			String[] params = paramConditions.toArray(new String[paramConditions.size()]);
-			throw new UnsatisfiedServletRequestParameterException(params, request.getParameterMap());
+			throw new UnsatisfiedServletRequestParameterException(paramConditions, request.getParameterMap());
 		}
 		else {
 			return null;
@@ -243,18 +284,60 @@ public abstract class RequestMappingInfoHandlerMapping extends AbstractHandlerMe
 		return result;
 	}
 
-	private Set<String> getRequestParams(HttpServletRequest request, Set<RequestMappingInfo> partialMatches) {
+	private List<String[]> getRequestParams(HttpServletRequest request, Set<RequestMappingInfo> partialMatches) {
+		List<String[]> result = new ArrayList<String[]>();
 		for (RequestMappingInfo partialMatch : partialMatches) {
 			ParamsRequestCondition condition = partialMatch.getParamsCondition();
-			if (!CollectionUtils.isEmpty(condition.getExpressions()) && (condition.getMatchingCondition(request) == null)) {
-				Set<String> expressions = new HashSet<String>();
-				for (NameValueExpression expr : condition.getExpressions()) {
-					expressions.add(expr.toString());
+			Set<NameValueExpression<String>> expressions = condition.getExpressions();
+			if (!CollectionUtils.isEmpty(expressions) && condition.getMatchingCondition(request) == null) {
+				int i = 0;
+				String[] array = new String[expressions.size()];
+				for (NameValueExpression<String> expression : expressions) {
+					array[i++] = expression.toString();
 				}
-				return expressions;
+				result.add(array);
 			}
 		}
-		return null;
+		return result;
+	}
+
+
+	/**
+	 * Default handler for HTTP OPTIONS.
+	 */
+	private static class HttpOptionsHandler {
+
+		private final HttpHeaders headers = new HttpHeaders();
+
+
+		public HttpOptionsHandler(Set<String> declaredMethods) {
+			this.headers.setAllow(initAllowedHttpMethods(declaredMethods));
+		}
+
+		private static Set<HttpMethod> initAllowedHttpMethods(Set<String> declaredMethods) {
+			Set<HttpMethod> result = new LinkedHashSet<HttpMethod>(declaredMethods.size());
+			if (declaredMethods.isEmpty()) {
+				for (HttpMethod method : HttpMethod.values()) {
+					if (!HttpMethod.TRACE.equals(method)) {
+						result.add(method);
+					}
+				}
+			}
+			else {
+				boolean hasHead = declaredMethods.contains("HEAD");
+				for (String method : declaredMethods) {
+					result.add(HttpMethod.valueOf(method));
+					if (!hasHead && "GET".equals(method)) {
+						result.add(HttpMethod.HEAD);
+					}
+				}
+			}
+			return result;
+		}
+
+		public HttpHeaders handle() {
+			return this.headers;
+		}
 	}
 
 }

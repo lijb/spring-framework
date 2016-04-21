@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,18 +38,23 @@ import org.springframework.util.ClassUtils;
  * see the latter's javadoc for a configuration example.
  *
  * <p>Note: Spring 4.0 supports JRuby 1.5 and higher.
+ * As of Spring 4.2, JRuby 9.0.0.0 is supported but only through
+ * {@link org.springframework.scripting.support.StandardScriptFactory}.
  *
  * @author Juergen Hoeller
  * @author Rob Harrop
  * @since 2.0
  * @see JRubyScriptUtils
  * @see org.springframework.scripting.support.ScriptFactoryPostProcessor
+ * @deprecated in favor of JRuby support via the JSR-223 abstraction
+ * ({@link org.springframework.scripting.support.StandardScriptFactory})
  */
+@Deprecated
 public class JRubyScriptFactory implements ScriptFactory, BeanClassLoaderAware {
 
 	private final String scriptSourceLocator;
 
-	private final Class[] scriptInterfaces;
+	private final Class<?>[] scriptInterfaces;
 
 	private ClassLoader beanClassLoader = ClassUtils.getDefaultClassLoader();
 
@@ -61,7 +66,7 @@ public class JRubyScriptFactory implements ScriptFactory, BeanClassLoaderAware {
 	 * @param scriptInterfaces the Java interfaces that the scripted object
 	 * is supposed to implement
 	 */
-	public JRubyScriptFactory(String scriptSourceLocator, Class[] scriptInterfaces) {
+	public JRubyScriptFactory(String scriptSourceLocator, Class<?>... scriptInterfaces) {
 		Assert.hasText(scriptSourceLocator, "'scriptSourceLocator' must not be empty");
 		Assert.notEmpty(scriptInterfaces, "'scriptInterfaces' must not be empty");
 		this.scriptSourceLocator = scriptSourceLocator;
@@ -81,7 +86,7 @@ public class JRubyScriptFactory implements ScriptFactory, BeanClassLoaderAware {
 	}
 
 	@Override
-	public Class[] getScriptInterfaces() {
+	public Class<?>[] getScriptInterfaces() {
 		return this.scriptInterfaces;
 	}
 
@@ -98,7 +103,7 @@ public class JRubyScriptFactory implements ScriptFactory, BeanClassLoaderAware {
 	 * @see JRubyScriptUtils#createJRubyObject(String, Class[], ClassLoader)
 	 */
 	@Override
-	public Object getScriptedObject(ScriptSource scriptSource, Class[] actualInterfaces)
+	public Object getScriptedObject(ScriptSource scriptSource, Class<?>... actualInterfaces)
 			throws IOException, ScriptCompilationException {
 		try {
 			return JRubyScriptUtils.createJRubyObject(
@@ -116,7 +121,7 @@ public class JRubyScriptFactory implements ScriptFactory, BeanClassLoaderAware {
 	}
 
 	@Override
-	public Class getScriptedObjectType(ScriptSource scriptSource)
+	public Class<?> getScriptedObjectType(ScriptSource scriptSource)
 			throws IOException, ScriptCompilationException {
 
 		return null;

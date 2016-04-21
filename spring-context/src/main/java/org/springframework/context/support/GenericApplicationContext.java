@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 package org.springframework.context.support;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
-import org.springframework.beans.factory.annotation.QualifierAnnotationAutowireCandidateResolver;
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
@@ -90,7 +91,7 @@ public class GenericApplicationContext extends AbstractApplicationContext implem
 
 	private ResourceLoader resourceLoader;
 
-	private boolean refreshed = false;
+	private final AtomicBoolean refreshed = new AtomicBoolean();
 
 
 	/**
@@ -100,7 +101,6 @@ public class GenericApplicationContext extends AbstractApplicationContext implem
 	 */
 	public GenericApplicationContext() {
 		this.beanFactory = new DefaultListableBeanFactory();
-		this.beanFactory.setAutowireCandidateResolver(new QualifierAnnotationAutowireCandidateResolver());
 	}
 
 	/**
@@ -237,12 +237,11 @@ public class GenericApplicationContext extends AbstractApplicationContext implem
 	 */
 	@Override
 	protected final void refreshBeanFactory() throws IllegalStateException {
-		if (this.refreshed) {
+		if (!this.refreshed.compareAndSet(false, true)) {
 			throw new IllegalStateException(
 					"GenericApplicationContext does not support multiple refresh attempts: just call 'refresh' once");
 		}
 		this.beanFactory.setSerializationId(getId());
-		this.refreshed = true;
 	}
 
 	@Override
@@ -278,6 +277,12 @@ public class GenericApplicationContext extends AbstractApplicationContext implem
 	 * @return the internal bean factory (as DefaultListableBeanFactory)
 	 */
 	public final DefaultListableBeanFactory getDefaultListableBeanFactory() {
+		return this.beanFactory;
+	}
+
+	@Override
+	public AutowireCapableBeanFactory getAutowireCapableBeanFactory() throws IllegalStateException {
+		assertBeanFactoryActive();
 		return this.beanFactory;
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package org.springframework.web.portlet.mvc;
 
 import java.util.Collections;
 import java.util.Enumeration;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -89,7 +88,7 @@ public class PortletWrappingController extends AbstractController
 
 	private PortletConfig portletConfig;
 
-	private Class portletClass;
+	private Class<?> portletClass;
 
 	private String portletName;
 
@@ -127,7 +126,7 @@ public class PortletWrappingController extends AbstractController
 	 * Needs to implement {@code javax.portlet.Portlet}.
 	 * @see javax.portlet.Portlet
 	 */
-	public void setPortletClass(Class portletClass) {
+	public void setPortletClass(Class<?> portletClass) {
 		this.portletClass = portletClass;
 	}
 
@@ -288,7 +287,7 @@ public class PortletWrappingController extends AbstractController
 
 		@Override
 		public Enumeration<String> getPublicRenderParameterNames() {
-			return Collections.enumeration(new HashSet<String>());
+			return Collections.enumeration(Collections.<String>emptySet());
 		}
 
 		@Override
@@ -298,17 +297,17 @@ public class PortletWrappingController extends AbstractController
 
 		@Override
 		public Enumeration<QName> getPublishingEventQNames() {
-			return Collections.enumeration(new HashSet<QName>());
+			return Collections.enumeration(Collections.<QName>emptySet());
 		}
 
 		@Override
 		public Enumeration<QName> getProcessingEventQNames() {
-			return Collections.enumeration(new HashSet<QName>());
+			return Collections.enumeration(Collections.<QName>emptySet());
 		}
 
 		@Override
 		public Enumeration<Locale> getSupportedLocales() {
-			return Collections.enumeration(new HashSet<Locale>());
+			return Collections.enumeration(Collections.<Locale>emptySet());
 		}
 
 		@Override

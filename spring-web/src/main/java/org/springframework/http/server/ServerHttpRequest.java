@@ -16,24 +16,20 @@
 
 package org.springframework.http.server;
 
+import java.net.InetSocketAddress;
 import java.security.Principal;
 
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpRequest;
-import org.springframework.util.MultiValueMap;
 
 /**
  * Represents a server-side HTTP request.
  *
  * @author Arjen Poutsma
+ * @author Rossen Stoyanchev
  * @since 3.0
  */
 public interface ServerHttpRequest extends HttpRequest, HttpInputMessage {
-
-	/**
-	 * Returns the map of query parameters. Empty if no query has been set.
-	 */
-	MultiValueMap<String, String> getQueryParams();
 
 	/**
 	 * Return a {@link java.security.Principal} instance containing the name of the
@@ -43,13 +39,19 @@ public interface ServerHttpRequest extends HttpRequest, HttpInputMessage {
 	Principal getPrincipal();
 
 	/**
-	 * Return the host name of the endpoint on the other end.
+	 * Return the address on which the request was received.
 	 */
-	String getRemoteHostName();
+	InetSocketAddress getLocalAddress();
 
 	/**
-	 * Return the IP address of the endpoint on the other end.
+	 * Return the address of the remote client.
 	 */
-	String getRemoteAddress();
+	InetSocketAddress getRemoteAddress();
+
+	/**
+	 * Return a control that allows putting the request in asynchronous mode so the
+	 * response remains open until closed explicitly from the current or another thread.
+	 */
+	ServerHttpAsyncRequestControl getAsyncRequestControl(ServerHttpResponse response);
 
 }

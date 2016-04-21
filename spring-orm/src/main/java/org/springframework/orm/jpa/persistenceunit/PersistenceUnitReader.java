@@ -249,7 +249,7 @@ class PersistenceUnitReader {
 			unitInfo.setTransactionType(PersistenceUnitTransactionType.valueOf(txType));
 		}
 
-		// data-source
+		// evaluate data sources
 		String jtaDataSource = DomUtils.getChildElementValueByTagName(persistenceUnit, JTA_DATA_SOURCE);
 		if (StringUtils.hasText(jtaDataSource)) {
 			unitInfo.setJtaDataSource(this.dataSourceLookup.getDataSource(jtaDataSource.trim()));
@@ -269,7 +269,8 @@ class PersistenceUnitReader {
 		// exclude unlisted classes
 		Element excludeUnlistedClasses = DomUtils.getChildElementByTagName(persistenceUnit, EXCLUDE_UNLISTED_CLASSES);
 		if (excludeUnlistedClasses != null) {
-			unitInfo.setExcludeUnlistedClasses(true);
+			String excludeText = DomUtils.getTextValue(excludeUnlistedClasses);
+			unitInfo.setExcludeUnlistedClasses(!StringUtils.hasText(excludeText) || Boolean.valueOf(excludeText));
 		}
 
 		// set JPA 2.0 shared cache mode

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ import org.springframework.core.env.Environment;
 import org.springframework.core.env.EnvironmentCapable;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.core.type.classreading.MetadataReader;
 import org.springframework.util.Assert;
 import org.springframework.util.PatternMatchUtils;
 
@@ -93,7 +92,7 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 	 * implementations.
 	 * <p>If given a plain {@code BeanDefinitionRegistry}, the default {@code ResourceLoader}
 	 * will be a {@link org.springframework.core.io.support.PathMatchingResourcePatternResolver}.
-	 * <p>If the the passed-in bean factory also implements {@link EnvironmentCapable} its
+	 * <p>If the passed-in bean factory also implements {@link EnvironmentCapable} its
 	 * environment will be used by this reader.  Otherwise, the reader will initialize and
 	 * use a {@link org.springframework.core.env.StandardEnvironment}. All
 	 * {@code ApplicationContext} implementations are {@code EnvironmentCapable}, while
@@ -104,8 +103,7 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 	 * {@link org.springframework.stereotype.Component @Component},
 	 * {@link org.springframework.stereotype.Repository @Repository},
 	 * {@link org.springframework.stereotype.Service @Service}, and
-	 * {@link org.springframework.stereotype.Controller @Controller} stereotype
-	 * annotations.
+	 * {@link org.springframework.stereotype.Controller @Controller} stereotype annotations
 	 * @see #setResourceLoader
 	 * @see #setEnvironment
 	 */
@@ -125,13 +123,12 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 	 * @param registry the {@code BeanFactory} to load bean definitions into, in the form
 	 * of a {@code BeanDefinitionRegistry}
 	 * @param useDefaultFilters whether to include the default filters for the
-	 * @param environment the Spring {@link Environment} to use when evaluating bean
-	 * definition profile metadata.
 	 * {@link org.springframework.stereotype.Component @Component},
 	 * {@link org.springframework.stereotype.Repository @Repository},
 	 * {@link org.springframework.stereotype.Service @Service}, and
-	 * {@link org.springframework.stereotype.Controller @Controller} stereotype
-	 * annotations.
+	 * {@link org.springframework.stereotype.Controller @Controller} stereotype annotations
+	 * @param environment the Spring {@link Environment} to use when evaluating bean
+	 * definition profile metadata
 	 * @since 3.1
 	 * @see #setResourceLoader
 	 */
@@ -165,10 +162,18 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 	}
 
 	/**
+	 * Return the defaults to use for detected beans (never {@code null}).
+	 * @since 4.1
+	 */
+	public BeanDefinitionDefaults getBeanDefinitionDefaults() {
+		return this.beanDefinitionDefaults;
+	}
+
+	/**
 	 * Set the name-matching patterns for determining autowire candidates.
 	 * @param autowireCandidatePatterns the patterns to match against
 	 */
-	public void setAutowireCandidatePatterns(String[] autowireCandidatePatterns) {
+	public void setAutowireCandidatePatterns(String... autowireCandidatePatterns) {
 		this.autowireCandidatePatterns = autowireCandidatePatterns;
 	}
 
@@ -225,7 +230,7 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 			AnnotationConfigUtils.registerAnnotationConfigProcessors(this.registry);
 		}
 
-		return this.registry.getBeanDefinitionCount() - beanCountAtScanStart;
+		return (this.registry.getBeanDefinitionCount() - beanCountAtScanStart);
 	}
 
 	/**
@@ -318,8 +323,8 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 	/**
 	 * Determine whether the given new bean definition is compatible with
 	 * the given existing bean definition.
-	 * <p>The default implementation simply considers them as compatible
-	 * when the bean class name matches.
+	 * <p>The default implementation considers them as compatible when the existing
+	 * bean definition comes from the same source or from a non-scanning source.
 	 * @param newDefinition the new bean definition, originated from scanning
 	 * @param existingDefinition the existing bean definition, potentially an
 	 * explicitly defined one or a previously generated one from scanning

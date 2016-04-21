@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,8 @@ import org.springframework.util.Assert;
 
 /**
  * Helper methods for named parameter parsing.
- * Only intended for internal use within Spring's JDBC framework.
+ *
+ * <p>Only intended for internal use within Spring's JDBC framework.
  *
  * @author Thomas Risberg
  * @author Juergen Hoeller
@@ -102,7 +103,7 @@ public abstract class NamedParameterUtils {
 			if (c == ':' || c == '&') {
 				int j = i + 1;
 				if (j < statement.length && statement[j] == ':' && c == ':') {
-					// Postgres-style "::" casting operator - to be skipped.
+					// Postgres-style "::" casting operator should be skipped
 					i = i + 2;
 					continue;
 				}
@@ -112,11 +113,13 @@ public abstract class NamedParameterUtils {
 					while (j < statement.length && !('}' == statement[j])) {
 						j++;
 						if (':' == statement[j] || '{' == statement[j]) {
-							throw new InvalidDataAccessApiUsageException("Parameter name contains invalid character '" + statement[j] + "' at position " + i + " in statement " + sql);
+							throw new InvalidDataAccessApiUsageException("Parameter name contains invalid character '" +
+									statement[j] + "' at position " + i + " in statement: " + sql);
 						}
 					}
 					if (j >= statement.length) {
-						throw new InvalidDataAccessApiUsageException("Non-terminated named parameter declaration at position " + i + " in statement " + sql);
+						throw new InvalidDataAccessApiUsageException(
+								"Non-terminated named parameter declaration at position " + i + " in statement: " + sql);
 					}
 					if (j - i > 3) {
 						parameter = sql.substring(i + 2, j);
@@ -141,7 +144,7 @@ public abstract class NamedParameterUtils {
 				if (c == '\\') {
 					int j = i + 1;
 					if (j < statement.length && statement[j] == ':') {
-						// this is an escaped : and should be skipped
+						// escaped ":" should be skipped
 						sqlToUse = sqlToUse.substring(0, i - escapes) + sqlToUse.substring(i - escapes + 1);
 						escapes++;
 						i = i + 2;
@@ -149,6 +152,12 @@ public abstract class NamedParameterUtils {
 					}
 				}
 				if (c == '?') {
+					int j = i + 1;
+					if (j < statement.length && statement[j] == '?') {
+						// Postgres-style "??" operator should be skipped
+						i = i + 2;
+						continue;
+					}
 					unnamedParameterCount++;
 					totalParameterCount++;
 				}
@@ -165,8 +174,9 @@ public abstract class NamedParameterUtils {
 		return parsedSql;
 	}
 
-	private static int addNamedParameter(List<ParameterHolder> parameterList, int totalParameterCount, int escapes, int i, int j,
-			String parameter) {
+	private static int addNamedParameter(
+			List<ParameterHolder> parameterList, int totalParameterCount, int escapes, int i, int j, String parameter) {
+
 		parameterList.add(new ParameterHolder(parameter, i - escapes, j - escapes));
 		totalParameterCount++;
 		return totalParameterCount;
@@ -229,18 +239,18 @@ public abstract class NamedParameterUtils {
 	}
 
 	/**
-	 * Parse the SQL statement and locate any placeholders or named parameters.
-	 * Named parameters are substituted for a JDBC placeholder and any select list
-	 * is expanded to the required number of placeholders.  Select lists may contain
-	 * an array of objects and in that case the placeholders will be grouped and
-	 * enclosed with parantheses.  This allows for the use of "expression lists" in
-	 * the SQL statement like:<br/>
-	 * select id, name, state from table where (name, age) in (('John', 35), ('Ann', 50))
-	 * <p>The parameter values passed in are used to determine the number of
-	 * placeholder to be used for a select list. Select lists should be limited
-	 * to 100 or fewer elements. A larger number of elements is not guaramteed to
-	 * be supported by the database and is strictly vendor-dependent.
-	 * @param parsedSql the parsed represenation of the SQL statement
+	 * Parse the SQL statement and locate any placeholders or named parameters. Named
+	 * parameters are substituted for a JDBC placeholder, and any select list is expanded
+	 * to the required number of placeholders. Select lists may contain an array of
+	 * objects, and in that case the placeholders will be grouped and enclosed with
+	 * parentheses. This allows for the use of "expression lists" in the SQL statement
+	 * like: <br /><br />
+	 * {@code select id, name, state from table where (name, age) in (('John', 35), ('Ann', 50))}
+	 * <p>The parameter values passed in are used to determine the number of placeholders to
+	 * be used for a select list. Select lists should be limited to 100 or fewer elements.
+	 * A larger number of elements is not guaranteed to be supported by the database and
+	 * is strictly vendor-dependent.
+	 * @param parsedSql the parsed representation of the SQL statement
 	 * @param paramSource the source for named parameters
 	 * @return the SQL statement with substituted parameters
 	 * @see #parseSqlStatement
@@ -248,21 +258,21 @@ public abstract class NamedParameterUtils {
 	public static String substituteNamedParameters(ParsedSql parsedSql, SqlParameterSource paramSource) {
 		String originalSql = parsedSql.getOriginalSql();
 		StringBuilder actualSql = new StringBuilder();
-		List paramNames = parsedSql.getParameterNames();
+		List<String> paramNames = parsedSql.getParameterNames();
 		int lastIndex = 0;
 		for (int i = 0; i < paramNames.size(); i++) {
-			String paramName = (String) paramNames.get(i);
+			String paramName = paramNames.get(i);
 			int[] indexes = parsedSql.getParameterIndexes(i);
 			int startIndex = indexes[0];
 			int endIndex = indexes[1];
-			actualSql.append(originalSql.substring(lastIndex, startIndex));
+			actualSql.append(originalSql, lastIndex, startIndex);
 			if (paramSource != null && paramSource.hasValue(paramName)) {
 				Object value = paramSource.getValue(paramName);
 				if (value instanceof SqlParameterValue) {
 					value = ((SqlParameterValue) value).getValue();
 				}
 				if (value instanceof Collection) {
-					Iterator entryIter = ((Collection) value).iterator();
+					Iterator<?> entryIter = ((Collection<?>) value).iterator();
 					int k = 0;
 					while (entryIter.hasNext()) {
 						if (k > 0) {
@@ -295,7 +305,7 @@ public abstract class NamedParameterUtils {
 			}
 			lastIndex = endIndex;
 		}
-		actualSql.append(originalSql.substring(lastIndex, originalSql.length()));
+		actualSql.append(originalSql, lastIndex, originalSql.length());
 		return actualSql.toString();
 	}
 
@@ -314,10 +324,10 @@ public abstract class NamedParameterUtils {
 		Object[] paramArray = new Object[parsedSql.getTotalParameterCount()];
 		if (parsedSql.getNamedParameterCount() > 0 && parsedSql.getUnnamedParameterCount() > 0) {
 			throw new InvalidDataAccessApiUsageException(
-					"You can't mix named and traditional ? placeholders. You have " +
+					"Not allowed to mix named and traditional ? placeholders. You have " +
 					parsedSql.getNamedParameterCount() + " named parameter(s) and " +
-					parsedSql.getUnnamedParameterCount() + " traditonal placeholder(s) in [" +
-					parsedSql.getOriginalSql() + "]");
+					parsedSql.getUnnamedParameterCount() + " traditional placeholder(s) in statement: " +
+					parsedSql.getOriginalSql());
 		}
 		List<String> paramNames = parsedSql.getParameterNames();
 		for (int i = 0; i < paramNames.size(); i++) {
@@ -408,14 +418,11 @@ public abstract class NamedParameterUtils {
 		List<String> paramNames = parsedSql.getParameterNames();
 		List<SqlParameter> params = new LinkedList<SqlParameter>();
 		for (String paramName : paramNames) {
-			SqlParameter param = new SqlParameter(
-					paramName,
-					paramSource.getSqlType(paramName),
-					paramSource.getTypeName(paramName));
-			params.add(param);
+			params.add(new SqlParameter(paramName, paramSource.getSqlType(paramName), paramSource.getTypeName(paramName)));
 		}
 		return params;
 	}
+
 
 	//-------------------------------------------------------------------------
 	// Convenience methods operating on a plain SQL String
@@ -463,28 +470,32 @@ public abstract class NamedParameterUtils {
 		return buildValueArray(parsedSql, new MapSqlParameterSource(paramMap), null);
 	}
 
+
 	private static class ParameterHolder {
-		private String parameterName;
-		private int startIndex;
-		private int endIndex;
+
+		private final String parameterName;
+
+		private final int startIndex;
+
+		private final int endIndex;
 
 		public ParameterHolder(String parameterName, int startIndex, int endIndex) {
-			super();
 			this.parameterName = parameterName;
 			this.startIndex = startIndex;
 			this.endIndex = endIndex;
 		}
 
 		public String getParameterName() {
-			return parameterName;
+			return this.parameterName;
 		}
 
 		public int getStartIndex() {
-			return startIndex;
+			return this.startIndex;
 		}
 
 		public int getEndIndex() {
-			return endIndex;
+			return this.endIndex;
 		}
 	}
+
 }
